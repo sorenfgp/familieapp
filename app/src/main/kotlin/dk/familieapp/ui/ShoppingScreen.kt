@@ -96,7 +96,7 @@ private fun WeekList(vm: AppViewModel, open: List<ShoppingItem>, done: List<Shop
                         Icon(Icons.Filled.Add, contentDescription = "Tilføj vare")
                     }
                 },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardOptions = SentenceCaps.copy(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { add() }),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = Color.White,
@@ -284,6 +284,7 @@ private fun StapleDialog(staple: Staple, onSave: (Staple) -> Unit, onDismiss: ()
                     onValueChange = { name = it },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Vare") },
+                    keyboardOptions = SentenceCaps,
                     singleLine = true,
                 )
                 OutlinedTextField(

@@ -17,30 +17,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
-// ---------- Kalender (kommer i næste version) ----------
-
-@Composable
-fun CalendarScreen() {
-    Column(Modifier.fillMaxSize()) {
-        ScreenHeader("Kommer i næste version", "Kalender")
-        Surface(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            shape = RoundedCornerShape(22.dp),
-            color = Color.White,
-        ) {
-            Text(
-                "Her kommer familiens aftaler fra Google Kalender, sammen med aftensmaden fra madplanen.",
-                Modifier.padding(20.dp),
-                fontSize = 15.sp,
-                lineHeight = 21.sp,
-                color = Muted,
-            )
-        }
-    }
-}
-
 // ---------- Mere ----------
 
 @Composable
@@ -95,11 +71,16 @@ fun MoreScreen(vm: AppViewModel) {
                 }
             }
 
-            SectionLabel("På vej")
+            SectionLabel("Kalender")
             Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), color = Color.White) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Google Kalender", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                    Text("Næste version.", fontSize = 14.sp, color = Muted)
+                    Text(
+                        "Appen viser de kalendere, telefonen synkroniserer. Vælg hvilke under fanen Kalender.",
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        color = Muted,
+                    )
                 }
             }
         }
@@ -180,6 +161,7 @@ fun HouseholdSetupScreen(vm: AppViewModel) {
                 onValueChange = { name = it },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Familiens navn") },
+                keyboardOptions = SentenceCaps,
                 singleLine = true,
             )
             YellowButton(

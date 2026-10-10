@@ -310,6 +310,7 @@ fun PlanMealDialog(
                     },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Ret") },
+                    keyboardOptions = SentenceCaps,
                     singleLine = true,
                 )
                 OutlinedTextField(
@@ -317,6 +318,7 @@ fun PlanMealDialog(
                     onValueChange = { cook = it },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Hvem laver mad? (valgfrit)") },
+                    keyboardOptions = SentenceCaps,
                     singleLine = true,
                 )
                 if (suggestions.isNotEmpty()) {

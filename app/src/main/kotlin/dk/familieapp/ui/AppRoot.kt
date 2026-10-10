@@ -89,7 +89,7 @@ fun AppRoot(vm: AppViewModel, sharedUrl: String?, onSharedUrlHandled: () -> Unit
             composable("today") { TodayScreen(vm, nav) }
             composable("mealplan") { MealPlanScreen(vm, nav) }
             composable("shopping") { ShoppingScreen(vm) }
-            composable("calendar") { CalendarScreen() }
+            composable("calendar") { CalendarScreen(vm) }
             composable("more") { MoreScreen(vm) }
             composable("recipe/{id}") { entry ->
                 RecipeDetailScreen(vm, entry.arguments?.getString("id").orEmpty(), nav)

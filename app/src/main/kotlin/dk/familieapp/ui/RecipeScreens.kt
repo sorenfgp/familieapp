@@ -283,6 +283,7 @@ private fun RecipeForm(
                 onValueChange = { name = it },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Navn") },
+                keyboardOptions = SentenceCaps,
                 singleLine = true,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -315,6 +316,7 @@ private fun RecipeForm(
                         onValueChange = { ingredients[index] = ingredient.copy(name = it) },
                         modifier = Modifier.weight(1f),
                         placeholder = { Text("Vare") },
+                        keyboardOptions = SentenceCaps,
                         singleLine = true,
                     )
                     OutlinedTextField(
@@ -342,6 +344,7 @@ private fun RecipeForm(
                         onValueChange = { steps[index] = it },
                         modifier = Modifier.weight(1f),
                         minLines = 2,
+                        keyboardOptions = SentenceCaps,
                     )
                     IconButton(onClick = { steps.removeAt(index) }) {
                         Icon(Icons.Filled.Close, contentDescription = "Fjern trin ${index + 1}")

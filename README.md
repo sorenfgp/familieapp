@@ -8,7 +8,11 @@ Android-app til familiens madplan, opskrifter og indkøb. Skrevet i Kotlin med J
 - **Opskrifter:** kartotek med ingredienser og fremgangsmåde. Importér fra et link, del en side fra browseren til appen, eller skriv selv.
 - **Indkøbsliste:** grupperet efter butiksafdeling. Varer kan komme fra en opskrift, fra ugens madplan eller skrives ind.
 - **Faste varer:** en redigerbar liste (morgenmad, madpakker), som lægges på ugens liste med ét tryk.
-- **Kalender:** ikke med endnu. Google Kalender kommer i næste version.
+- **Kalender:** viser de kalendere, telefonen synkroniserer fra Google Kalender, sammen med aftensmaden fra madplanen. Nye aftaler oprettes i telefonens kalenderapp.
+
+### Sådan virker kalenderen
+
+Appen læser Androids kalenderlager, som Google Kalender selv synkroniserer til. Der er derfor ingen Google-login eller Google Cloud-opsætning. Hver telefon ser de kalendere, dens egen Google-konto har adgang til, så en fælles familiekalender skal være delt i Google Kalender for at blive vist hos alle.
 
 ## Hent og installér appen
 

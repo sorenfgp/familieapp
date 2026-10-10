@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
@@ -16,6 +17,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -27,6 +29,9 @@ val Yellow = Color(0xFFF0B544)
 val Ground = Color(0xFFF2F4EC)
 val Track = Color(0xFFE3E8DC)
 val Line = Color(0xFFC9D1C4)
+
+/** Tekstfelter starter med stort bogstav. */
+val SentenceCaps = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
 
 @Composable
 fun FamilieTheme(content: @Composable () -> Unit) {

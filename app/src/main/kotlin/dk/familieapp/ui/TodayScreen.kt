@@ -5,19 +5,25 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import dk.familieapp.data.CalendarEvent
+import dk.familieapp.data.CalendarMath
 import dk.familieapp.data.Dates
+import dk.familieapp.data.DeviceCalendarRepo
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.ZoneId
 
 @Composable
 fun TodayScreen(vm: AppViewModel, nav: NavController) {
@@ -25,6 +31,17 @@ fun TodayScreen(vm: AppViewModel, nav: NavController) {
     val shopping by vm.shopping.collectAsStateWithLifecycle()
 
     val today = LocalDate.now()
+    val context = LocalContext.current
+    val calendarRepo = remember { DeviceCalendarRepo(context.applicationContext) }
+    val zone = remember { ZoneId.systemDefault() }
+    // Null betyder, at appen ikke har fået adgang til kalenderen endnu.
+    var todayEvents by remember { mutableStateOf<List<CalendarEvent>?>(null) }
+    var refresh by remember { mutableIntStateOf(0) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refresh += 1 }
+    LaunchedEffect(refresh) {
+        todayEvents = if (calendarRepo.hasPermission()) calendarRepo.events(today, today) else null
+    }
+
     val meal = meals.firstOrNull { it.date == today.toString() }
     val cook = meal?.cook.orEmpty()
     val open = shopping.filter { !it.checked }.sortedBy { it.createdAt }
@@ -108,13 +125,40 @@ fun TodayScreen(vm: AppViewModel, nav: NavController) {
 
             // Kalender
             Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), color = Color.White) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 8.dp)) {
                     Text("I dag i kalenderen", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Text(
-                        "Google Kalender bliver koblet på i næste version.",
-                        fontSize = 15.sp,
-                        color = Muted,
-                    )
+                    Spacer(Modifier.height(6.dp))
+                    val shownEvents = todayEvents
+                    when {
+                        shownEvents == null -> Text(
+                            "Giv appen adgang til kalenderen under fanen Kalender.",
+                            fontSize = 15.sp,
+                            color = Muted,
+                        )
+                        shownEvents.isEmpty() -> Text("Ingen aftaler i dag.", fontSize = 15.sp, color = Muted)
+                        else -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            shownEvents.take(4).forEach { event ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Text(
+                                        CalendarMath.timeLabel(event, today, zone),
+                                        Modifier.width(104.dp),
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                    Text(event.title, Modifier.weight(1f), fontSize = 15.sp, maxLines = 1)
+                                }
+                            }
+                            if (shownEvents.size > 4) {
+                                Text("og ${shownEvents.size - 4} mere", fontSize = 14.sp, color = Muted)
+                            }
+                        }
+                    }
+                    TextButton(
+                        onClick = { nav.openTab("calendar") },
+                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 12.dp),
+                    ) {
+                        Text("Åbn kalenderen", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
