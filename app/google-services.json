@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "50244105975",
+    "project_id": "familieapp-a7305",
+    "storage_bucket": "familieapp-a7305.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:50244105975:android:d6b7daec6993bca0e045f2",
+        "android_client_info": {
+          "package_name": "dk.familieapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA4u2Emn0Ld8Bdu8yw8SZdTrakPSjS57uc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
