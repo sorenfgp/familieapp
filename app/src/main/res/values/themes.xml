@@ -1,0 +1,8 @@
+<resources>
+    <color name="ground">#F2F4EC</color>
+    <color name="launcher_bg">#1E5C45</color>
+
+    <style name="Theme.Familieapp" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/ground</item>
+    </style>
+</resources>
