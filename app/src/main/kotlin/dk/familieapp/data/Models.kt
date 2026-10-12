@@ -120,4 +120,30 @@ data class ChoreEntry(
     val createdAt: Long = 0,
 )
 
+/**
+ * Kopi af én aftale fra familiekalenderen. En forælders telefon lægger kopierne i
+ * familiens data, så enheder uden Google-konto kan læse kalenderen.
+ * id er "{eventId}_{begin}", fordi gentagne aftaler deler eventId.
+ */
+@Serializable
+data class MirroredEvent(
+    val id: String = "",
+    val eventId: Long = 0,
+    val title: String = "",
+    val begin: Long = 0,
+    val end: Long = 0,
+    val allDay: Boolean = false,
+    val location: String = "",
+    val color: Int = 0,
+)
+
+/** Hvornår kopien af familiekalenderen sidst blev opdateret. Ét dokument med id "main". */
+@Serializable
+data class CalendarSyncInfo(
+    val id: String = "main",
+    val calendarKey: String = "",
+    val calendarName: String = "",
+    val syncedAt: Long = 0,
+)
+
 fun newId(): String = UUID.randomUUID().toString()

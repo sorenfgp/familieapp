@@ -9,16 +9,18 @@ Android-app til familiens madplan, opskrifter og indkøb. Skrevet i Kotlin med J
 - **Opskrifter:** kartotek med ingredienser og fremgangsmåde. Importér fra et link, del en side fra browseren til appen, eller skriv selv.
 - **Indkøbsliste:** grupperet efter butiksafdeling. Ens varer lægges sammen til én linje med summeret mængde og forkortede opskriftsnavne. Kun forældre kan rette listen.
 - **Faste varer:** en redigerbar liste (morgenmad, madpakker), som lægges på ugens liste med ét tryk.
-- **Kalender:** forældrene vælger én fælles Google-kalender. Appen viser dens aftaler sammen med aftensmaden og opretter nye aftaler direkte i den.
+- **Kalender:** forældrene vælger én fælles Google-kalender. Appen viser dens aftaler sammen med aftensmaden og opretter nye aftaler direkte i den. Børnene behøver ingen Google-konto.
 - **Pligter:** faste pligter (barn og ugedage) og ad hoc-pligter med belønning. Barnet melder en pligt udført, en forælder bekræfter, og alle kan se hvem der gjorde hvad.
 
 ### Sådan virker kalenderen
 
-Appen læser og skriver i Androids kalenderlager, som Google Kalender selv synkroniserer med Google. Der er derfor ingen Google-login eller Google Cloud-opsætning. Familiekalenderen skal være delt med alle familiens Google-konti (med ret til at ændre, hvis de skal kunne oprette aftaler) og være slået til i Google Kalender-appen på telefonen.
+Appen læser og skriver i Androids kalenderlager, som Google Kalender selv synkroniserer med Google. Der er derfor ingen Google-login eller Google Cloud-opsætning. Familiekalenderen skal være slået til i Google Kalender-appen på forældrenes telefoner, og en forælder skal have ret til at ændre i den for at oprette aftaler fra appen.
+
+Enheder uden adgang til kalenderen (typisk børnenes) læser en kopi. Forældrenes telefoner lægger aftalerne fra en uge tilbage til 90 dage frem i familiens data, når appen åbnes og hver 3. time i baggrunden. Kopien kan derfor være op til et par timer gammel, og børnene kan ikke oprette aftaler.
 
 ### Profiler og sikkerhed
 
-Begrænsningerne for børneprofiler (indkøbslisten, bekræftelse af pligter) håndhæves i appen, ikke i databasen. Forælder-PIN gemmes som en hash i familiens data. Det er nok til at holde styr på hverdagen, men ikke en sikkerhedsgrænse over for et barn, der går målrettet efter at omgå den.
+Begrænsningerne for børneprofiler (indkøbslisten, madplanen, bekræftelse af pligter) håndhæves i appen, ikke i databasen. Forælder-PIN gemmes som en hash i familiens data. Det er nok til at holde styr på hverdagen, men ikke en sikkerhedsgrænse over for et barn, der går målrettet efter at omgå den.
 
 ## Hent og installér appen
 

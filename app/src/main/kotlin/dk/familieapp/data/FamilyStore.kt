@@ -22,6 +22,8 @@ object Cols {
     val settings = Col("settings", FamilySettings::class.java, FamilySettings.serializer(), { it.id }, { s, id -> s.copy(id = id) })
     val choreTemplates = Col("choreTemplates", ChoreTemplate::class.java, ChoreTemplate.serializer(), { it.id }, { t, id -> t.copy(id = id) })
     val chores = Col("chores", ChoreEntry::class.java, ChoreEntry.serializer(), { it.id }, { c, id -> c.copy(id = id) })
+    val calendarEvents = Col("calendarEvents", MirroredEvent::class.java, MirroredEvent.serializer(), { it.id }, { e, id -> e.copy(id = id) })
+    val calendarSync = Col("calendarSync", CalendarSyncInfo::class.java, CalendarSyncInfo.serializer(), { it.id }, { s, id -> s.copy(id = id) })
 }
 
 /**
@@ -32,4 +34,7 @@ interface FamilyStore {
     fun <T : Any> observe(col: Col<T>): Flow<List<T>>
     fun <T : Any> save(col: Col<T>, items: List<T>)
     fun <T : Any> delete(col: Col<T>, ids: List<String>)
+
+    /** Gør samlingen lig med [items]: nye og ændrede gemmes, resten slettes. Venter på at det er gemt. */
+    suspend fun <T : Any> replaceAll(col: Col<T>, items: List<T>)
 }

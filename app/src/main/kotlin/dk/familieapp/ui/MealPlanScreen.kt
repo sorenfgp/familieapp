@@ -99,7 +99,8 @@ private fun WeekPlan(
                 date = date,
                 meal = meals.firstOrNull { it.date == date.toString() },
                 isToday = date == today,
-                onClick = { planDate = date },
+                onClick = { if (me?.role == ROLE_PARENT) planDate = date },
+                editable = me?.role == ROLE_PARENT,
             )
         }
         if (me?.role == ROLE_PARENT) item {
@@ -136,7 +137,7 @@ private fun WeekPlan(
 }
 
 @Composable
-private fun DayRow(date: LocalDate, meal: PlannedMeal?, isToday: Boolean, onClick: () -> Unit) {
+private fun DayRow(date: LocalDate, meal: PlannedMeal?, isToday: Boolean, onClick: () -> Unit, editable: Boolean = true) {
     val background = if (isToday) Green else Color.White
     val textColor = if (isToday) Color.White else Ink
     val subColor = if (isToday) Color(0xFFE6F1EA) else Muted
@@ -145,7 +146,7 @@ private fun DayRow(date: LocalDate, meal: PlannedMeal?, isToday: Boolean, onClic
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
             .background(background)
-            .clickable(onClick = onClick)
+            .clickable(enabled = editable, onClick = onClick)
             .heightIn(min = 60.dp)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -166,7 +167,7 @@ private fun DayRow(date: LocalDate, meal: PlannedMeal?, isToday: Boolean, onClic
         }
         if (isToday) {
             Pill("I dag", Yellow)
-        } else if (meal == null) {
+        } else if (meal == null && editable) {
             Text("Tilføj", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Green)
         }
     }
@@ -181,6 +182,7 @@ private fun RecipeList(
     modifier: Modifier,
 ) {
     val context = LocalContext.current
+    val me by vm.me.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableIntStateOf(0) }
     var pickFor by remember { mutableStateOf<Recipe?>(null) }
@@ -259,7 +261,7 @@ private fun RecipeList(
                     Text(recipe.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                     Text(meta, fontSize = 13.sp, color = Muted)
                 }
-                FilledTonalIconButton(onClick = { pickFor = recipe }) {
+                if (me?.role == ROLE_PARENT) FilledTonalIconButton(onClick = { pickFor = recipe }) {
                     Icon(Icons.Filled.Add, contentDescription = "Læg ${recipe.name} på madplanen")
                 }
             }

@@ -20,8 +20,8 @@ android {
         applicationId = "dk.familieapp"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3"
+        versionCode = 4
+        versionName = "0.4"
     }
 
     signingConfigs {
@@ -73,6 +73,7 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore")
 
     implementation("org.jsoup:jsoup:1.17.2")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     testImplementation("junit:junit:4.13.2")
 }

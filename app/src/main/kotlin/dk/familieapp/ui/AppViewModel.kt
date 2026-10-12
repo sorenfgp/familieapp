@@ -9,6 +9,10 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dk.familieapp.data.Addition
+import dk.familieapp.data.CalendarMirror
+import dk.familieapp.data.CalendarSyncInfo
+import dk.familieapp.data.MirroredEvent
+import kotlinx.coroutines.launch
 import dk.familieapp.data.CHORE_APPROVED
 import dk.familieapp.data.CHORE_DONE
 import dk.familieapp.data.CHORE_OPEN
@@ -181,6 +185,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // ---- Madplan ----
 
     fun planMeal(date: LocalDate, title: String, recipeId: String, cook: String) {
+        if (!isParent) return
         put(Cols.meals, PlannedMeal(date.toString(), title, recipeId, cook))
     }
 
@@ -190,7 +195,35 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearMeal(date: LocalDate) {
+        if (!isParent) return
         _store.value?.delete(Cols.meals, listOf(date.toString()))
+    }
+
+    // ---- Familiekalender: kopi til enheder uden adgang til Google-kalenderen ----
+
+    val calendarMirror: StateFlow<List<MirroredEvent>> = observe(Cols.calendarEvents)
+    val calendarSync: StateFlow<CalendarSyncInfo?> = observe(Cols.calendarSync)
+        .map { list -> list.firstOrNull { it.id == "main" } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    private var lastMirrorSync = 0L
+
+    /**
+     * Har denne telefon familiekalenderen, kopieres dens aftaler til familiens data,
+     * så børnenes enheder kan læse dem. Højst hvert 10. minut, medmindre [force].
+     */
+    fun syncCalendar(force: Boolean = false) {
+        val key = settings.value?.calendarKey.orEmpty()
+        val store = _store.value ?: return
+        if (key.isBlank() || !session.firebaseEnabled) return
+        if (!force && now() - lastMirrorSync < 10 * 60 * 1000L) return
+        lastMirrorSync = now()
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            runCatching {
+                if (CalendarMirror.sync(app, store, key)) CalendarMirror.schedule(app)
+            }
+        }
     }
 
     // ---- Indkøbsliste (kun forældre må rette) ----

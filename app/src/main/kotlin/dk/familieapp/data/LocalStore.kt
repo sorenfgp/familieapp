@@ -43,6 +43,12 @@ class LocalStore(private val file: File) : FamilyStore {
         }
     }
 
+    override suspend fun <T : Any> replaceAll(col: Col<T>, items: List<T>) {
+        update(col.name) {
+            items.associate { col.idOf(it) to json.encodeToJsonElement(col.serializer, it) }
+        }
+    }
+
     override fun <T : Any> delete(col: Col<T>, ids: List<String>) {
         if (ids.isEmpty()) return
         update(col.name) { docs -> docs - ids.toSet() }

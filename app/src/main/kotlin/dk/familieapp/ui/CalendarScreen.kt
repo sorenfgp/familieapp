@@ -35,6 +35,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dk.familieapp.data.CalendarEvent
 import dk.familieapp.data.CalendarMath
+import dk.familieapp.data.CalendarMirror
 import dk.familieapp.data.Dates
 import dk.familieapp.data.DeviceCalendar
 import dk.familieapp.data.DeviceCalendarRepo
@@ -54,6 +55,8 @@ fun CalendarScreen(vm: AppViewModel) {
     val meals by vm.meals.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val me by vm.me.collectAsStateWithLifecycle()
+    val mirror by vm.calendarMirror.collectAsStateWithLifecycle()
+    val syncInfo by vm.calendarSync.collectAsStateWithLifecycle()
     val isParent = me?.role == ROLE_PARENT
     val familyKey = settings?.calendarKey.orEmpty()
     val familyName = settings?.calendarName.orEmpty()
@@ -72,7 +75,7 @@ fun CalendarScreen(vm: AppViewModel) {
 
     var allCalendars by remember { mutableStateOf(emptyList<DeviceCalendar>()) }
     var familyCalendar by remember { mutableStateOf<DeviceCalendar?>(null) }
-    var events by remember { mutableStateOf(emptyList<CalendarEvent>()) }
+    var localEvents by remember { mutableStateOf(emptyList<CalendarEvent>()) }
     var loaded by remember { mutableStateOf(false) }
     var refresh by remember { mutableIntStateOf(0) }
     var choosing by remember { mutableStateOf(false) }
@@ -86,11 +89,21 @@ fun CalendarScreen(vm: AppViewModel) {
     LaunchedEffect(granted, start, familyKey, refresh) {
         if (granted) {
             allCalendars = repo.calendars()
-            familyCalendar = repo.findCalendar(familyKey, allCalendars)
-            events = familyCalendar?.let { repo.events(start, start.plusDays(6), it.id) }.orEmpty()
-            loaded = true
+            val found = repo.findCalendar(familyKey, allCalendars)
+            familyCalendar = found
+            localEvents = found?.let { repo.events(start, start.plusDays(6), it.id) }.orEmpty()
+            // Telefonen har kalenderen: opdatér kopien, som børnenes enheder læser.
+            if (found != null) vm.syncCalendar()
+        } else {
+            familyCalendar = null
         }
+        loaded = true
     }
+
+    // Har telefonen ikke selv kalenderen, vises kopien fra forældrenes telefon.
+    val local = familyCalendar
+    val events = if (local != null) localEvents else CalendarMirror.eventsBetween(mirror, start, start.plusDays(6), zone)
+    val readsCopy = local == null && familyKey.isNotBlank()
 
     fun moveWeek(weeks: Int) {
         weekOffset += weeks
@@ -141,9 +154,9 @@ fun CalendarScreen(vm: AppViewModel) {
             ) {
                 item(key = "status") {
                     when {
-                        !granted -> InfoCard(
+                        familyKey.isBlank() && isParent && !granted -> InfoCard(
                             title = "Vis familiens aftaler",
-                            text = "Appen bruger den Google-kalender, telefonen allerede synkroniserer. " +
+                            text = "Appen bruger en Google-kalender, som telefonen allerede synkroniserer. " +
                                 "Den skal have lov til at læse og skrive i kalenderen.",
                             button = "Giv adgang til kalenderen",
                             onClick = { permissionLauncher.launch(calendarPermissions) },
@@ -159,14 +172,7 @@ fun CalendarScreen(vm: AppViewModel) {
                             button = if (isParent) "Vælg familiekalender" else null,
                             onClick = { choosing = true },
                         )
-                        loaded && familyCalendar == null -> InfoCard(
-                            title = "Familiekalenderen mangler her",
-                            text = "Telefonen har ikke adgang til \"$familyName\". Del kalenderen med telefonens " +
-                                "Google-konto, og slå synkronisering til i Google Kalender-appen.",
-                            button = if (isParent) "Vælg en anden kalender" else null,
-                            onClick = { choosing = true },
-                        )
-                        else -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        local != null -> Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 "Familiekalender: $familyName",
                                 Modifier.weight(1f),
@@ -177,6 +183,36 @@ fun CalendarScreen(vm: AppViewModel) {
                                 TextButton(onClick = { choosing = true }) {
                                     Text("Skift", fontWeight = FontWeight.Bold)
                                 }
+                            }
+                        }
+                        else -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "Familiekalender: $familyName · ${syncLabel(syncInfo?.syncedAt)}",
+                                fontSize = 13.sp,
+                                color = Muted,
+                            )
+                            if (syncInfo == null) {
+                                Text(
+                                    "Kalenderen er ikke hentet endnu. Den hentes, når en forælder med adgang " +
+                                        "til kalenderen åbner appen.",
+                                    fontSize = 14.sp,
+                                )
+                            }
+                            if (isParent && !granted) {
+                                InfoCard(
+                                    title = "Opret aftaler fra denne telefon",
+                                    text = "Giv appen adgang til telefonens kalender for at se aftalerne direkte og oprette nye.",
+                                    button = "Giv adgang til kalenderen",
+                                    onClick = { permissionLauncher.launch(calendarPermissions) },
+                                )
+                            } else if (isParent && loaded) {
+                                InfoCard(
+                                    title = "Familiekalenderen mangler her",
+                                    text = "Telefonen viser en kopi. Del \"$familyName\" med telefonens Google-konto " +
+                                        "for at oprette aftaler herfra.",
+                                    button = "Vælg en anden kalender",
+                                    onClick = { choosing = true },
+                                )
                             }
                         }
                     }
@@ -192,7 +228,7 @@ fun CalendarScreen(vm: AppViewModel) {
                         detail = listOf(CalendarMath.timeLabel(event, selected, zone), event.location)
                             .filter { it.isNotBlank() }
                             .joinToString(" · "),
-                        onClick = { show(event) },
+                        onClick = if (local != null) ({ show(event) }) else null,
                     )
                 }
                 if (meal != null) {
@@ -205,7 +241,7 @@ fun CalendarScreen(vm: AppViewModel) {
                         )
                     }
                 }
-                if (familyCalendar != null && dayEvents.isEmpty() && meal == null) {
+                if ((local != null || readsCopy) && dayEvents.isEmpty() && meal == null) {
                     item(key = "empty") {
                         Text("Ingen aftaler denne dag.", Modifier.padding(vertical = 8.dp), color = Muted)
                     }
@@ -213,7 +249,7 @@ fun CalendarScreen(vm: AppViewModel) {
             }
         }
 
-        if (familyCalendar != null) {
+        if (local != null) {
             FloatingActionButton(
                 onClick = { startCreating() },
                 modifier = Modifier
@@ -250,12 +286,21 @@ fun CalendarScreen(vm: AppViewModel) {
                         val ok = repo.insertEvent(calendar.id, title, location, date, startTime, endTime)
                         context.toast(if (ok) "Aftalen er gemt i $familyName" else "Aftalen kunne ikke gemmes")
                         refresh += 1
+                        vm.syncCalendar(force = true)
                     }
                 }
             },
             onDismiss = { creating = false },
         )
     }
+}
+
+/** "opdateret i dag kl. 14.05" */
+private fun syncLabel(syncedAt: Long?): String {
+    if (syncedAt == null || syncedAt == 0L) return "ikke hentet endnu"
+    val moment = java.time.Instant.ofEpochMilli(syncedAt).atZone(ZoneId.systemDefault())
+    val day = if (moment.toLocalDate() == LocalDate.now()) "i dag" else Dates.short(moment.toLocalDate())
+    return "opdateret $day kl. ${CalendarMath.clock(moment.toLocalTime())}"
 }
 
 @Composable

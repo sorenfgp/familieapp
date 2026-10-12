@@ -82,7 +82,7 @@ fun RecipeDetailScreen(vm: AppViewModel, id: String, nav: NavController) {
             ) {
                 Text(recipe.name, fontSize = 30.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold)
                 Text(meta, fontSize = 14.sp, color = Muted)
-                Button(
+                if (isParent) Button(
                     onClick = { picking = true },
                     modifier = Modifier
                         .fillMaxWidth()

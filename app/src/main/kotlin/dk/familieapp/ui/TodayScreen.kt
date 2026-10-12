@@ -21,6 +21,7 @@ import dk.familieapp.data.CHORE_APPROVED
 import dk.familieapp.data.CHORE_DONE
 import dk.familieapp.data.CalendarEvent
 import dk.familieapp.data.CalendarMath
+import dk.familieapp.data.CalendarMirror
 import dk.familieapp.data.ChorePlan
 import dk.familieapp.data.Dates
 import dk.familieapp.data.DeviceCalendarRepo
@@ -50,12 +51,23 @@ fun TodayScreen(vm: AppViewModel, nav: NavController) {
     var refresh by remember { mutableIntStateOf(0) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refresh += 1 }
     LaunchedEffect(refresh, familyKey) {
+        // Har telefonen familiekalenderen, holdes kopien til børnenes enheder opdateret.
+        vm.syncCalendar()
         todayEvents = if (calendarRepo.hasReadPermission() && familyKey.isNotBlank()) {
             calendarRepo.findCalendar(familyKey, calendarRepo.calendars())
                 ?.let { calendarRepo.events(today, today, it.id) }
         } else {
             null
         }
+    }
+
+    // Uden egen adgang til familiekalenderen bruges kopien fra forældrenes telefon.
+    val mirror by vm.calendarMirror.collectAsStateWithLifecycle()
+    val syncInfo by vm.calendarSync.collectAsStateWithLifecycle()
+    val copyToday = if (familyKey.isNotBlank() && syncInfo != null) {
+        CalendarMirror.eventsBetween(mirror, today, today, zone)
+    } else {
+        null
     }
 
     val meal = meals.firstOrNull { it.date == today.toString() }
@@ -108,7 +120,7 @@ fun TodayScreen(vm: AppViewModel, nav: NavController) {
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Yellow, contentColor = Ink),
                     ) {
-                        Text(if (meal == null) "Planlæg aftensmad" else "Se ugens madplan", fontWeight = FontWeight.Bold)
+                        Text(if (meal == null && isParent) "Planlæg aftensmad" else "Se ugens madplan", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -184,7 +196,7 @@ fun TodayScreen(vm: AppViewModel, nav: NavController) {
                 Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 8.dp)) {
                     Text("I dag i kalenderen", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(6.dp))
-                    val shownEvents = todayEvents
+                    val shownEvents = todayEvents ?: copyToday
                     when {
                         shownEvents == null -> Text(
                             "Familiekalenderen sættes op under fanen Kalender.",
