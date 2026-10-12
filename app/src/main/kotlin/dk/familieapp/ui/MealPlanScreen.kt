@@ -29,6 +29,7 @@ import androidx.navigation.NavController
 import dk.familieapp.data.Dates
 import dk.familieapp.data.PlannedMeal
 import dk.familieapp.data.Recipe
+import dk.familieapp.data.ROLE_PARENT
 import java.time.LocalDate
 
 @Composable
@@ -38,11 +39,11 @@ fun MealPlanScreen(vm: AppViewModel, nav: NavController) {
     var weekOffset by rememberSaveable { mutableIntStateOf(0) }
 
     val today = LocalDate.now()
-    val start = Dates.weekStart(today).plusWeeks(weekOffset.toLong())
+    val start = Dates.planWeekStart(today).plusWeeks(weekOffset.toLong())
 
     Column(Modifier.fillMaxSize()) {
         if (vm.mealTab == 0) {
-            ScreenHeader("Uge ${Dates.weekNumber(start)} · ${Dates.weekRange(start)}", "Madplan") {
+            ScreenHeader("Uge ${Dates.weekNumber(start.plusDays(1))} · ${Dates.weekRange(start)}", "Madplan") {
                 IconButton(onClick = { weekOffset -= 1 }) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Forrige uge")
                 }
@@ -84,6 +85,7 @@ private fun WeekPlan(
     modifier: Modifier,
 ) {
     val context = LocalContext.current
+    val me by vm.me.collectAsStateWithLifecycle()
     var planDate by remember { mutableStateOf<LocalDate?>(null) }
 
     LazyColumn(
@@ -100,7 +102,7 @@ private fun WeekPlan(
                 onClick = { planDate = date },
             )
         }
-        item {
+        if (me?.role == ROLE_PARENT) item {
             YellowButton(
                 text = "Læg ugens ingredienser på indkøbslisten",
                 onClick = {

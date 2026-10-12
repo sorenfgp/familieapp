@@ -1,6 +1,8 @@
 package dk.familieapp.ui
 
 import android.Manifest
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import android.content.ContentUris
 import android.content.Intent
 import android.provider.CalendarContract
@@ -36,20 +38,30 @@ import dk.familieapp.data.CalendarMath
 import dk.familieapp.data.Dates
 import dk.familieapp.data.DeviceCalendar
 import dk.familieapp.data.DeviceCalendarRepo
+import dk.familieapp.data.ROLE_PARENT
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 
+private val calendarPermissions = arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
+
 @Composable
 fun CalendarScreen(vm: AppViewModel) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val repo = remember { DeviceCalendarRepo(context.applicationContext) }
     val meals by vm.meals.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val me by vm.me.collectAsStateWithLifecycle()
+    val isParent = me?.role == ROLE_PARENT
+    val familyKey = settings?.calendarKey.orEmpty()
+    val familyName = settings?.calendarName.orEmpty()
     val zone = remember { ZoneId.systemDefault() }
 
-    var granted by remember { mutableStateOf(repo.hasPermission()) }
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        granted = it
+    var granted by remember { mutableStateOf(repo.hasReadPermission()) }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        granted = repo.hasReadPermission()
     }
 
     val today = LocalDate.now()
@@ -58,21 +70,25 @@ fun CalendarScreen(vm: AppViewModel) {
     val selected = LocalDate.parse(selectedIso)
     val start = Dates.weekStart(today).plusWeeks(weekOffset.toLong())
 
+    var allCalendars by remember { mutableStateOf(emptyList<DeviceCalendar>()) }
+    var familyCalendar by remember { mutableStateOf<DeviceCalendar?>(null) }
     var events by remember { mutableStateOf(emptyList<CalendarEvent>()) }
-    var calendars by remember { mutableStateOf(emptyList<DeviceCalendar>()) }
-    var hidden by remember { mutableStateOf(repo.hiddenCalendars) }
-    var choosing by remember { mutableStateOf(false) }
+    var loaded by remember { mutableStateOf(false) }
     var refresh by remember { mutableIntStateOf(0) }
+    var choosing by remember { mutableStateOf(false) }
+    var creating by remember { mutableStateOf(false) }
 
     // Hent igen, når man kommer tilbage fra kalenderappen.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        granted = repo.hasPermission()
+        granted = repo.hasReadPermission()
         refresh += 1
     }
-    LaunchedEffect(granted, start, hidden, refresh) {
+    LaunchedEffect(granted, start, familyKey, refresh) {
         if (granted) {
-            calendars = repo.calendars()
-            events = repo.events(start, start.plusDays(6))
+            allCalendars = repo.calendars()
+            familyCalendar = repo.findCalendar(familyKey, allCalendars)
+            events = familyCalendar?.let { repo.events(start, start.plusDays(6), it.id) }.orEmpty()
+            loaded = true
         }
     }
 
@@ -81,29 +97,24 @@ fun CalendarScreen(vm: AppViewModel) {
         selectedIso = selected.plusWeeks(weeks.toLong()).toString()
     }
 
-    fun open(intent: Intent) {
-        runCatching { context.startActivity(intent) }
-            .onFailure { context.toast("Der er ingen kalenderapp på telefonen") }
-    }
-
-    fun newEvent() {
-        val time = if (selected == today) LocalTime.now().plusHours(1).withMinute(0) else LocalTime.of(12, 0)
-        val begin = selected.atTime(time).atZone(zone).toInstant().toEpochMilli()
-        open(
-            Intent(Intent.ACTION_INSERT)
-                .setData(CalendarContract.Events.CONTENT_URI)
-                .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, begin)
-                .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, begin + 60 * 60 * 1000)
-        )
-    }
-
     fun show(event: CalendarEvent) {
-        open(
-            Intent(Intent.ACTION_VIEW)
-                .setData(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, event.eventId))
-                .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, event.begin)
-                .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, event.end)
-        )
+        runCatching {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW)
+                    .setData(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, event.eventId))
+                    .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, event.begin)
+                    .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, event.end)
+            )
+        }.onFailure { context.toast("Der er ingen kalenderapp på telefonen") }
+    }
+
+    fun startCreating() {
+        val calendar = familyCalendar ?: return
+        when {
+            !calendar.canWrite -> context.toast("Telefonens Google-konto må kun læse familiekalenderen")
+            !repo.hasWritePermission() -> permissionLauncher.launch(calendarPermissions)
+            else -> creating = true
+        }
     }
 
     val monthName = Dates.months[selected.monthValue - 1].replaceFirstChar { it.uppercase() }
@@ -121,111 +132,58 @@ fun CalendarScreen(vm: AppViewModel) {
                 }
             }
 
-            // Ugestribe
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                for (index in 0..6) {
-                    val day = start.plusDays(index.toLong())
-                    val isSelected = day == selected
-                    val hasEvents = events.any { it.isOn(day) }
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(
-                                when {
-                                    isSelected -> Green
-                                    day == today -> Mint
-                                    else -> Color.Transparent
-                                }
-                            )
-                            .clickable { selectedIso = day.toString() }
-                            .padding(vertical = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        Text(
-                            Dates.dayShort[index],
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (isSelected) Color(0xFFCFE5D8) else Muted,
-                        )
-                        Text(
-                            "${day.dayOfMonth}",
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isSelected) Color.White else Ink,
-                        )
-                        Box(
-                            Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    when {
-                                        !hasEvents -> Color.Transparent
-                                        isSelected -> Yellow
-                                        else -> Green
-                                    }
-                                )
-                        )
-                    }
-                }
-            }
+            WeekStrip(start, selected, today, events) { selectedIso = it.toString() }
 
             LazyColumn(
                 Modifier.weight(1f),
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (!granted) {
-                    item(key = "permission") {
-                        Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), color = Color.White) {
-                            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text("Vis familiens aftaler", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                                Text(
-                                    "Appen viser de kalendere, telefonen allerede synkroniserer fra Google Kalender. " +
-                                        "Den skal have lov til at læse kalenderen.",
-                                    fontSize = 15.sp,
-                                    lineHeight = 21.sp,
-                                    color = Muted,
-                                )
-                                YellowButton(
-                                    "Giv adgang til kalenderen",
-                                    onClick = { permissionLauncher.launch(Manifest.permission.READ_CALENDAR) },
-                                )
-                                Text(
-                                    "Sker der ikke noget, er adgangen afvist. Slå den til under telefonens indstillinger for appen.",
-                                    fontSize = 13.sp,
-                                    color = Muted,
-                                )
-                            }
-                        }
-                    }
-                } else {
-                    item(key = "status") {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            val shownCount = calendars.count { it.id !in hidden }
+                item(key = "status") {
+                    when {
+                        !granted -> InfoCard(
+                            title = "Vis familiens aftaler",
+                            text = "Appen bruger den Google-kalender, telefonen allerede synkroniserer. " +
+                                "Den skal have lov til at læse og skrive i kalenderen.",
+                            button = "Giv adgang til kalenderen",
+                            onClick = { permissionLauncher.launch(calendarPermissions) },
+                            note = "Sker der ikke noget, er adgangen afvist. Slå den til under telefonens indstillinger for appen.",
+                        )
+                        familyKey.isBlank() -> InfoCard(
+                            title = "Ingen familiekalender endnu",
+                            text = if (isParent) {
+                                "Vælg den Google-kalender, hele familien skal læse fra og gemme i."
+                            } else {
+                                "En forælder skal vælge familiens kalender."
+                            },
+                            button = if (isParent) "Vælg familiekalender" else null,
+                            onClick = { choosing = true },
+                        )
+                        loaded && familyCalendar == null -> InfoCard(
+                            title = "Familiekalenderen mangler her",
+                            text = "Telefonen har ikke adgang til \"$familyName\". Del kalenderen med telefonens " +
+                                "Google-konto, og slå synkronisering til i Google Kalender-appen.",
+                            button = if (isParent) "Vælg en anden kalender" else null,
+                            onClick = { choosing = true },
+                        )
+                        else -> Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                "Viser $shownCount af ${calendars.size} kalendere på telefonen",
+                                "Familiekalender: $familyName",
                                 Modifier.weight(1f),
                                 fontSize = 13.sp,
                                 color = Muted,
                             )
-                            TextButton(onClick = { choosing = true }) {
-                                Text("Vælg", fontWeight = FontWeight.Bold)
+                            if (isParent) {
+                                TextButton(onClick = { choosing = true }) {
+                                    Text("Skift", fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
                 }
 
                 item(key = "day") {
-                    SectionLabel(
-                        (if (selected == today) "I dag · " else "") + Dates.long(selected)
-                    )
+                    SectionLabel((if (selected == today) "I dag · " else "") + Dates.long(selected))
                 }
                 items(dayEvents, key = { "${it.eventId}-${it.begin}" }) { event ->
                     AgendaRow(
@@ -247,7 +205,7 @@ fun CalendarScreen(vm: AppViewModel) {
                         )
                     }
                 }
-                if (granted && dayEvents.isEmpty() && meal == null) {
+                if (familyCalendar != null && dayEvents.isEmpty() && meal == null) {
                     item(key = "empty") {
                         Text("Ingen aftaler denne dag.", Modifier.padding(vertical = 8.dp), color = Muted)
                     }
@@ -255,29 +213,123 @@ fun CalendarScreen(vm: AppViewModel) {
             }
         }
 
-        FloatingActionButton(
-            onClick = { newEvent() },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(20.dp),
-            containerColor = Yellow,
-            contentColor = Ink,
-        ) {
-            Icon(Icons.Filled.Add, contentDescription = "Ny aftale")
+        if (familyCalendar != null) {
+            FloatingActionButton(
+                onClick = { startCreating() },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(20.dp),
+                containerColor = Yellow,
+                contentColor = Ink,
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = "Ny aftale")
+            }
         }
     }
 
     if (choosing) {
         CalendarChooser(
-            calendars = calendars,
-            initiallyHidden = hidden,
-            onSave = { newHidden ->
-                repo.hiddenCalendars = newHidden
-                hidden = newHidden
+            calendars = allCalendars,
+            currentKey = familyKey,
+            onPick = { calendar ->
+                vm.setFamilyCalendar(calendar.key, calendar.name)
                 choosing = false
             },
             onDismiss = { choosing = false },
         )
+    }
+
+    if (creating) {
+        val calendar = familyCalendar
+        NewEventDialog(
+            initialDate = selected,
+            onSave = { title, location, date, startTime, endTime ->
+                creating = false
+                if (calendar != null) {
+                    scope.launch {
+                        val ok = repo.insertEvent(calendar.id, title, location, date, startTime, endTime)
+                        context.toast(if (ok) "Aftalen er gemt i $familyName" else "Aftalen kunne ikke gemmes")
+                        refresh += 1
+                    }
+                }
+            },
+            onDismiss = { creating = false },
+        )
+    }
+}
+
+@Composable
+private fun WeekStrip(
+    start: LocalDate,
+    selected: LocalDate,
+    today: LocalDate,
+    events: List<CalendarEvent>,
+    onSelect: (LocalDate) -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        for (index in 0..6) {
+            val day = start.plusDays(index.toLong())
+            val isSelected = day == selected
+            val hasEvents = events.any { it.isOn(day) }
+            Column(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(
+                        when {
+                            isSelected -> Green
+                            day == today -> Mint
+                            else -> Color.Transparent
+                        }
+                    )
+                    .clickable { onSelect(day) }
+                    .padding(vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    Dates.dayAbbr(day),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isSelected) Color(0xFFCFE5D8) else Muted,
+                )
+                Text(
+                    "${day.dayOfMonth}",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isSelected) Color.White else Ink,
+                )
+                Box(
+                    Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(
+                            when {
+                                !hasEvents -> Color.Transparent
+                                isSelected -> Yellow
+                                else -> Green
+                            }
+                        )
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun InfoCard(title: String, text: String, button: String?, onClick: () -> Unit, note: String? = null) {
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), color = Color.White) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(title, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text(text, fontSize = 15.sp, lineHeight = 21.sp, color = Muted)
+            if (button != null) YellowButton(button, onClick = onClick)
+            if (note != null) Text(note, fontSize = 13.sp, color = Muted)
+        }
     }
 }
 
@@ -312,49 +364,154 @@ private fun AgendaRow(color: Color, title: String, detail: String, onClick: (() 
 @Composable
 private fun CalendarChooser(
     calendars: List<DeviceCalendar>,
-    initiallyHidden: Set<Long>,
-    onSave: (Set<Long>) -> Unit,
+    currentKey: String,
+    onPick: (DeviceCalendar) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var hidden by remember { mutableStateOf(initiallyHidden) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Vælg kalendere") },
+        title = { Text("Familiekalender") },
         text = {
             if (calendars.isEmpty()) {
                 Text("Telefonen har ingen synkroniserede kalendere. Tjek, at Google Kalender er sat op på telefonen.")
             } else {
-                LazyColumn(Modifier.heightIn(max = 380.dp)) {
-                    items(calendars, key = { it.id }) { calendar ->
-                        val shown = calendar.id !in hidden
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable { hidden = if (shown) hidden + calendar.id else hidden - calendar.id }
-                                .heightIn(min = 52.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            Checkbox(checked = shown, onCheckedChange = null)
-                            Column(Modifier.weight(1f)) {
-                                Text(calendar.name, fontWeight = FontWeight.SemiBold)
-                                if (calendar.account.isNotBlank() && calendar.account != calendar.name) {
-                                    Text(calendar.account, fontSize = 13.sp, color = Muted)
-                                }
-                            }
-                            Box(
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Kalenderen bruges af hele familien. Den skal være delt med alle familiens Google-konti.",
+                        fontSize = 14.sp,
+                        color = Muted,
+                    )
+                    LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                        items(calendars.distinctBy { it.key }, key = { it.key }) { calendar ->
+                            Row(
                                 Modifier
-                                    .size(12.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(calendar.color or 0xFF000000.toInt()))
-                            )
+                                    .fillMaxWidth()
+                                    .clickable { onPick(calendar) }
+                                    .heightIn(min = 52.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                RadioButton(selected = calendar.key == currentKey, onClick = null)
+                                Column(Modifier.weight(1f)) {
+                                    Text(calendar.name, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        if (calendar.canWrite) calendar.account else "${calendar.account} · kun læseadgang",
+                                        fontSize = 13.sp,
+                                        color = Muted,
+                                    )
+                                }
+                                Box(
+                                    Modifier
+                                        .size(12.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(calendar.color or 0xFF000000.toInt()))
+                                )
+                            }
                         }
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(hidden) }) { Text("Gem") }
+            TextButton(onClick = onDismiss) { Text("Luk") }
+        },
+    )
+}
+
+@Composable
+private fun NewEventDialog(
+    initialDate: LocalDate,
+    onSave: (title: String, location: String, date: LocalDate, start: LocalTime?, end: LocalTime?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    var title by remember { mutableStateOf("") }
+    var location by remember { mutableStateOf("") }
+    var date by remember { mutableStateOf(initialDate) }
+    var allDay by remember { mutableStateOf(false) }
+    var start by remember { mutableStateOf(LocalTime.of(17, 0)) }
+    var end by remember { mutableStateOf(LocalTime.of(18, 0)) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Ny aftale") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Titel") },
+                    keyboardOptions = SentenceCaps,
+                    singleLine = true,
+                )
+                OutlinedButton(
+                    onClick = {
+                        DatePickerDialog(
+                            context,
+                            { _, year, month, day -> date = LocalDate.of(year, month + 1, day) },
+                            date.year,
+                            date.monthValue - 1,
+                            date.dayOfMonth,
+                        ).show()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(Dates.long(date).replaceFirstChar { it.uppercase() })
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Hele dagen", Modifier.weight(1f))
+                    Switch(checked = allDay, onCheckedChange = { allDay = it })
+                }
+                if (!allDay) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                TimePickerDialog(
+                                    context,
+                                    { _, hour, minute ->
+                                        val duration = java.time.Duration.between(start, end)
+                                        start = LocalTime.of(hour, minute)
+                                        end = if (duration.isNegative || duration.isZero) start.plusHours(1) else start.plus(duration)
+                                    },
+                                    start.hour,
+                                    start.minute,
+                                    true,
+                                ).show()
+                            },
+                            modifier = Modifier.weight(1f),
+                        ) { Text("Fra ${CalendarMath.clock(start)}") }
+                        OutlinedButton(
+                            onClick = {
+                                TimePickerDialog(
+                                    context,
+                                    { _, hour, minute -> end = LocalTime.of(hour, minute) },
+                                    end.hour,
+                                    end.minute,
+                                    true,
+                                ).show()
+                            },
+                            modifier = Modifier.weight(1f),
+                        ) { Text("Til ${CalendarMath.clock(end)}") }
+                    }
+                }
+                OutlinedTextField(
+                    value = location,
+                    onValueChange = { location = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Sted (valgfrit)") },
+                    keyboardOptions = SentenceCaps,
+                    singleLine = true,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onSave(title.trim(), location.trim(), date, if (allDay) null else start, if (allDay) null else end)
+                },
+                enabled = title.isNotBlank(),
+            ) { Text("Gem") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Annullér") }

@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -23,8 +22,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dk.familieapp.data.Categories
+import dk.familieapp.data.Profile
+import dk.familieapp.data.ROLE_PARENT
 import dk.familieapp.data.RecipeImporter
 import dk.familieapp.data.ShoppingItem
+import dk.familieapp.data.ShoppingMerge
 import dk.familieapp.data.Staple
 
 private val stapleGroups = listOf("Morgenmad", "Madpakker", "Andet")
@@ -33,6 +35,9 @@ private val stapleGroups = listOf("Morgenmad", "Madpakker", "Andet")
 fun ShoppingScreen(vm: AppViewModel) {
     val items by vm.shopping.collectAsStateWithLifecycle()
     val staples by vm.staples.collectAsStateWithLifecycle()
+    val profiles by vm.profiles.collectAsStateWithLifecycle()
+    val me by vm.me.collectAsStateWithLifecycle()
+    val canEdit = me?.role == ROLE_PARENT
     val open = items.filter { !it.checked }.sortedBy { it.createdAt }
     val done = items.filter { it.checked }.sortedBy { it.createdAt }
 
@@ -48,10 +53,18 @@ fun ShoppingScreen(vm: AppViewModel) {
             onSelect = { vm.shoppingTab = it },
             modifier = Modifier.padding(horizontal = 20.dp),
         )
+        if (!canEdit) {
+            Text(
+                "Kun forældre kan rette indkøbslisten.",
+                Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp),
+                fontSize = 13.sp,
+                color = Muted,
+            )
+        }
         if (vm.shoppingTab == 0) {
-            WeekList(vm, open, done, Modifier.weight(1f))
+            WeekList(vm, open, done, profiles.orEmpty(), canEdit, Modifier.weight(1f))
         } else {
-            StapleList(vm, staples, Modifier.weight(1f))
+            StapleList(vm, staples, canEdit, Modifier.weight(1f))
         }
     }
 }
@@ -59,7 +72,14 @@ fun ShoppingScreen(vm: AppViewModel) {
 // ---------- Ugens indkøbsliste ----------
 
 @Composable
-private fun WeekList(vm: AppViewModel, open: List<ShoppingItem>, done: List<ShoppingItem>, modifier: Modifier) {
+private fun WeekList(
+    vm: AppViewModel,
+    open: List<ShoppingItem>,
+    done: List<ShoppingItem>,
+    profiles: List<Profile>,
+    canEdit: Boolean,
+    modifier: Modifier,
+) {
     var text by rememberSaveable { mutableStateOf("") }
 
     fun add() {
@@ -83,31 +103,33 @@ private fun WeekList(vm: AppViewModel, open: List<ShoppingItem>, done: List<Shop
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        item(key = "add") {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Tilføj vare, fx 2 l mælk") },
-                singleLine = true,
-                shape = RoundedCornerShape(26.dp),
-                trailingIcon = {
-                    IconButton(onClick = { add() }) {
-                        Icon(Icons.Filled.Add, contentDescription = "Tilføj vare")
-                    }
-                },
-                keyboardOptions = SentenceCaps.copy(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { add() }),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                ),
-            )
+        if (canEdit) {
+            item(key = "add") {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Tilføj vare, fx 2 l mælk") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(26.dp),
+                    trailingIcon = {
+                        IconButton(onClick = { add() }) {
+                            Icon(Icons.Filled.Add, contentDescription = "Tilføj vare")
+                        }
+                    },
+                    keyboardOptions = SentenceCaps.copy(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { add() }),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White,
+                    ),
+                )
+            }
         }
         if (open.isEmpty() && done.isEmpty()) {
             item(key = "empty") {
                 Text(
-                    "Listen er tom. Tilføj varer her, fra en opskrift eller fra de faste varer.",
+                    "Listen er tom.",
                     Modifier.padding(vertical = 12.dp),
                     color = Muted,
                 )
@@ -118,7 +140,7 @@ private fun WeekList(vm: AppViewModel, open: List<ShoppingItem>, done: List<Shop
             item(key = "card-$category") {
                 WhiteCard {
                     list.forEach { entry ->
-                        ItemRow(entry, onToggle = { vm.toggleShoppingItem(entry) })
+                        ItemRow(entry, profiles, canEdit, onToggle = { vm.toggleShoppingItem(entry) })
                     }
                 }
             }
@@ -127,15 +149,17 @@ private fun WeekList(vm: AppViewModel, open: List<ShoppingItem>, done: List<Shop
             item(key = "done-label") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     SectionLabel("I kurven", Modifier.weight(1f))
-                    TextButton(onClick = { vm.clearCheckedItems() }) {
-                        Text("Ryd købte", fontWeight = FontWeight.Bold)
+                    if (canEdit) {
+                        TextButton(onClick = { vm.clearCheckedItems() }) {
+                            Text("Ryd købte", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
             item(key = "done") {
                 Column {
                     done.forEach { entry ->
-                        ItemRow(entry, onToggle = { vm.toggleShoppingItem(entry) })
+                        ItemRow(entry, profiles, canEdit, onToggle = { vm.toggleShoppingItem(entry) })
                     }
                 }
             }
@@ -144,11 +168,12 @@ private fun WeekList(vm: AppViewModel, open: List<ShoppingItem>, done: List<Shop
 }
 
 @Composable
-private fun ItemRow(item: ShoppingItem, onToggle: () -> Unit) {
+private fun ItemRow(item: ShoppingItem, profiles: List<Profile>, canEdit: Boolean, onToggle: () -> Unit) {
+    val sources = ShoppingMerge.shortSources(item.allSources())
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(onClick = onToggle)
+            .clickable(enabled = canEdit, onClick = onToggle)
             .heightIn(min = 48.dp)
             .padding(end = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -157,20 +182,25 @@ private fun ItemRow(item: ShoppingItem, onToggle: () -> Unit) {
         Checkbox(
             checked = item.checked,
             onCheckedChange = null,
+            enabled = canEdit,
             modifier = Modifier.padding(start = 14.dp, end = 6.dp),
         )
-        Text(
-            item.name,
-            Modifier.weight(1f),
-            fontSize = 16.sp,
-            color = if (item.checked) Muted else Ink,
-            textDecoration = if (item.checked) TextDecoration.LineThrough else null,
-        )
-        if (item.amount.isNotBlank()) {
-            Text(item.amount, fontSize = 14.sp, color = Muted)
+        Column(Modifier.weight(1f)) {
+            Text(
+                item.name,
+                fontSize = 16.sp,
+                color = if (item.checked) Muted else Ink,
+                textDecoration = if (item.checked) TextDecoration.LineThrough else null,
+            )
+            if (sources.isNotBlank() && !item.checked) {
+                Text(sources, fontSize = 12.sp, color = Muted, maxLines = 1)
+            }
         }
-        if (item.source.isNotBlank() && !item.checked) {
-            Pill(item.source.take(18))
+        if (item.amount.isNotBlank()) {
+            Text(item.amount, fontSize = 14.sp, color = Muted, maxLines = 1)
+        }
+        if (item.checked && item.checkedBy.isNotBlank()) {
+            Text(profiles.nameOf(item.checkedBy), fontSize = 13.sp, color = Muted)
         }
     }
 }
@@ -178,7 +208,7 @@ private fun ItemRow(item: ShoppingItem, onToggle: () -> Unit) {
 // ---------- Faste varer ----------
 
 @Composable
-private fun StapleList(vm: AppViewModel, staples: List<Staple>, modifier: Modifier) {
+private fun StapleList(vm: AppViewModel, staples: List<Staple>, canEdit: Boolean, modifier: Modifier) {
     val context = LocalContext.current
     var editing by remember { mutableStateOf<Staple?>(null) }
 
@@ -208,19 +238,21 @@ private fun StapleList(vm: AppViewModel, staples: List<Staple>, modifier: Modifi
                             Row(
                                 Modifier
                                     .fillMaxWidth()
-                                    .clickable { editing = staple }
+                                    .clickable(enabled = canEdit) { editing = staple }
                                     .heightIn(min = 48.dp)
-                                    .padding(start = 16.dp),
+                                    .padding(start = 16.dp, end = if (canEdit) 0.dp else 16.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Text(staple.name, Modifier.weight(1f), fontSize = 16.sp)
                                 Text(staple.amount, fontSize = 14.sp, color = Muted)
-                                IconButton(onClick = { vm.deleteStaple(staple.id) }) {
-                                    Icon(
-                                        Icons.Filled.Close,
-                                        contentDescription = "Fjern ${staple.name} fra faste varer",
-                                        tint = Muted,
-                                    )
+                                if (canEdit) {
+                                    IconButton(onClick = { vm.deleteStaple(staple.id) }) {
+                                        Icon(
+                                            Icons.Filled.Close,
+                                            contentDescription = "Fjern ${staple.name} fra faste varer",
+                                            tint = Muted,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -228,30 +260,32 @@ private fun StapleList(vm: AppViewModel, staples: List<Staple>, modifier: Modifi
                 }
             }
         }
-        item(key = "actions") {
-            Column(
-                Modifier.padding(top = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedButton(
-                    onClick = { editing = Staple() },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 52.dp),
+        if (canEdit) {
+            item(key = "actions") {
+                Column(
+                    Modifier.padding(top = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("Tilføj fast vare", fontWeight = FontWeight.Bold)
+                    OutlinedButton(
+                        onClick = { editing = Staple() },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 52.dp),
+                    ) {
+                        Text("Tilføj fast vare", fontWeight = FontWeight.Bold)
+                    }
+                    YellowButton(
+                        text = "Læg alle ${staples.size} på ugens liste",
+                        onClick = {
+                            val count = vm.addStaplesToShopping()
+                            context.toast(
+                                if (count == 0) "De faste varer står allerede på listen"
+                                else "$count varer lagt på ugens liste"
+                            )
+                        },
+                        enabled = staples.isNotEmpty(),
+                    )
                 }
-                YellowButton(
-                    text = "Læg alle ${staples.size} på ugens liste",
-                    onClick = {
-                        val count = vm.addStaplesToShopping()
-                        context.toast(
-                            if (count == 0) "De faste varer står allerede på listen"
-                            else "$count varer lagt på ugens liste"
-                        )
-                    },
-                    enabled = staples.isNotEmpty(),
-                )
             }
         }
     }

@@ -66,6 +66,10 @@ object Dates {
     fun weekStart(date: LocalDate): LocalDate =
         date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
 
+    /** Madplanens uge går fra søndag til lørdag, så søndagen kommer med i ugens indkøb. */
+    fun planWeekStart(date: LocalDate): LocalDate =
+        date.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY))
+
     fun weekNumber(date: LocalDate): Int = date.get(WeekFields.ISO.weekOfWeekBasedYear())
 
     fun dayName(date: LocalDate): String = dayLong[date.dayOfWeek.value - 1]

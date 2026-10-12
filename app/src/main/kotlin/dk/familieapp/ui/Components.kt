@@ -5,7 +5,11 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.Dp
+import dk.familieapp.data.Profile
+import dk.familieapp.data.ROLE_PARENT
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -161,6 +165,40 @@ fun YellowButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifie
         Text(text, fontWeight = FontWeight.Bold)
     }
 }
+
+/** Farver til profilernes avatarer. Nummer 2 (gul) har mørk tekst. */
+val ProfileColors = listOf(
+    Color(0xFF1E5C45),
+    Color(0xFF24598F),
+    Color(0xFFF0B544),
+    Color(0xFF6E4797),
+    Color(0xFFC8641B),
+    Color(0xFFB23A48),
+)
+
+@Composable
+fun Avatar(profile: Profile?, size: Dp = 36.dp) {
+    val index = (profile?.color ?: 0).mod(ProfileColors.size)
+    Box(
+        Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(ProfileColors[index]),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            profile?.name?.trim()?.take(1)?.uppercase() ?: "?",
+            color = if (index == 2) Ink else Color.White,
+            fontWeight = FontWeight.Bold,
+            fontSize = (size.value * 0.42f).sp,
+        )
+    }
+}
+
+fun List<Profile>?.nameOf(id: String): String =
+    this?.firstOrNull { it.id == id }?.name ?: "?"
+
+fun roleLabel(role: String): String = if (role == ROLE_PARENT) "Forælder" else "Barn"
 
 @Composable
 fun Pill(text: String, color: Color = Mint) {

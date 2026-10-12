@@ -2,17 +2,23 @@
 
 Android-app til familiens madplan, opskrifter og indkøb. Skrevet i Kotlin med Jetpack Compose.
 
-## Hvad appen kan (version 0.1)
+## Hvad appen kan (version 0.3)
 
-- **Madplan:** en ret pr. dag, uge for uge. Vælg fra opskrifterne eller skriv en ret selv.
+- **Profiler:** hver telefon eller tablet vælger en profil. Forældreprofiler kræver forælder-PIN. Avataren øverst fører til familie og indstillinger.
+- **Madplan:** en ret pr. dag, uge for uge fra søndag til lørdag. Vælg fra opskrifterne eller skriv en ret selv.
 - **Opskrifter:** kartotek med ingredienser og fremgangsmåde. Importér fra et link, del en side fra browseren til appen, eller skriv selv.
-- **Indkøbsliste:** grupperet efter butiksafdeling. Varer kan komme fra en opskrift, fra ugens madplan eller skrives ind.
+- **Indkøbsliste:** grupperet efter butiksafdeling. Ens varer lægges sammen til én linje med summeret mængde og forkortede opskriftsnavne. Kun forældre kan rette listen.
 - **Faste varer:** en redigerbar liste (morgenmad, madpakker), som lægges på ugens liste med ét tryk.
-- **Kalender:** viser de kalendere, telefonen synkroniserer fra Google Kalender, sammen med aftensmaden fra madplanen. Nye aftaler oprettes i telefonens kalenderapp.
+- **Kalender:** forældrene vælger én fælles Google-kalender. Appen viser dens aftaler sammen med aftensmaden og opretter nye aftaler direkte i den.
+- **Pligter:** faste pligter (barn og ugedage) og ad hoc-pligter med belønning. Barnet melder en pligt udført, en forælder bekræfter, og alle kan se hvem der gjorde hvad.
 
 ### Sådan virker kalenderen
 
-Appen læser Androids kalenderlager, som Google Kalender selv synkroniserer til. Der er derfor ingen Google-login eller Google Cloud-opsætning. Hver telefon ser de kalendere, dens egen Google-konto har adgang til, så en fælles familiekalender skal være delt i Google Kalender for at blive vist hos alle.
+Appen læser og skriver i Androids kalenderlager, som Google Kalender selv synkroniserer med Google. Der er derfor ingen Google-login eller Google Cloud-opsætning. Familiekalenderen skal være delt med alle familiens Google-konti (med ret til at ændre, hvis de skal kunne oprette aftaler) og være slået til i Google Kalender-appen på telefonen.
+
+### Profiler og sikkerhed
+
+Begrænsningerne for børneprofiler (indkøbslisten, bekræftelse af pligter) håndhæves i appen, ikke i databasen. Forælder-PIN gemmes som en hash i familiens data. Det er nok til at holde styr på hverdagen, men ikke en sikkerhedsgrænse over for et barn, der går målrettet efter at omgå den.
 
 ## Hent og installér appen
 
@@ -37,7 +43,7 @@ Uden Firebase gemmer appen kun på den enkelte telefon. Sådan deles data i fami
 5. Opret **Firestore Database** (produktionstilstand, fx `europe-west`).
 6. Indsæt indholdet af `firestore.rules` under **Firestore → Rules**, og udgiv.
 
-Når appen er bygget med filen, spørger den ved første start, om der skal oprettes en familie eller deltages med en familiekode. Koden findes under **Mere**.
+Når appen er bygget med filen, spørger den ved første start, om der skal oprettes en familie eller deltages med en familiekode. Koden findes under familien (tryk på din avatar øverst).
 
 Data, der er gemt lokalt før Firebase blev slået til, flyttes ikke automatisk med.
 
@@ -45,11 +51,12 @@ Data, der er gemt lokalt før Firebase blev slået til, flyttes ikke automatisk 
 
 ```
 app/src/main/kotlin/dk/familieapp/
-  data/   modeller, FamilyStore (lokal og Firestore), opskriftsimport, hjælpefunktioner
+  data/   modeller, samlinger (Cols), FamilyStore (lokal og Firestore), opskriftsimport,
+          sammenlægning af varer, pligtplan, kalender
   ui/     én fil pr. skærmområde, AppViewModel og AppRoot (navigation)
 ```
 
-Et nyt modul tilføjes ved at udvide `FamilyStore` med sine data, lave en skærm i `ui/` og give den en rute i `AppRoot.kt`.
+Et nyt modul tilføjes ved at lægge sine modeller i `Models.kt`, registrere en samling i `Cols`, lave en skærm i `ui/` og give den en rute i `AppRoot.kt`.
 
 ## Kendte begrænsninger
 

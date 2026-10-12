@@ -30,6 +30,7 @@ import dk.familieapp.data.Ingredient
 import dk.familieapp.data.NoRecipeFoundException
 import dk.familieapp.data.Recipe
 import dk.familieapp.data.RecipeImporter
+import dk.familieapp.data.ROLE_PARENT
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -40,6 +41,8 @@ fun RecipeDetailScreen(vm: AppViewModel, id: String, nav: NavController) {
     val recipes by vm.recipes.collectAsStateWithLifecycle()
     val meals by vm.meals.collectAsStateWithLifecycle()
     val recipe = recipes.firstOrNull { it.id == id }
+    val me by vm.me.collectAsStateWithLifecycle()
+    val isParent = me?.role == ROLE_PARENT
 
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
@@ -124,7 +127,7 @@ fun RecipeDetailScreen(vm: AppViewModel, id: String, nav: NavController) {
                                 }
                             }
                         }
-                        YellowButton(
+                        if (isParent) YellowButton(
                             text = "Læg ${chosen.size} ingredienser på indkøbslisten",
                             onClick = {
                                 val count = vm.addIngredients(recipe.name, chosen)
