@@ -35,14 +35,21 @@ data class Recipe(
     val kind: String = KIND_DINNER,
 )
 
-/** Én ret på madplanen. [date] er ISO-dato (2026-10-10) og bruges også som id. */
+/** Én ret på madplanen. [date] er ISO-dato (2026-10-10). */
 @Serializable
 data class PlannedMeal(
     val date: String = "",
     val title: String = "",
     val recipeId: String = "",
     val cook: String = "",
+    /** Hver ret har sit eget id, så en dag kan have flere retter. Ældre retter har datoen som id. */
+    val id: String = "",
+    val order: Long = 0,
 )
+
+/** Dagens retter i den rækkefølge, de blev tilføjet. */
+fun List<PlannedMeal>.onDate(date: String): List<PlannedMeal> =
+    filter { it.date == date }.sortedBy { it.order }
 
 @Serializable
 data class ShoppingItem(

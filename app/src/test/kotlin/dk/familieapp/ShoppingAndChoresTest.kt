@@ -10,6 +10,7 @@ import dk.familieapp.data.ChoreTemplate
 import dk.familieapp.data.Dates
 import dk.familieapp.data.ShoppingItem
 import dk.familieapp.data.ShoppingMerge
+import dk.familieapp.data.onDate
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.time.LocalDate
@@ -76,6 +77,19 @@ class ShoppingAndChoresTest {
             "Pizza · Tacos · Suppe +1",
             ShoppingMerge.shortSources(listOf("Pizza", "Tacos", "Suppe", "Lasagne")),
         )
+    }
+
+    @Test
+    fun severalDishesOnOneDayKeepTheirOrder() {
+        val meals = listOf(
+            dk.familieapp.data.PlannedMeal(date = "2026-10-12", title = "Is", id = "b", order = 2),
+            dk.familieapp.data.PlannedMeal(date = "2026-10-12", title = "Tapas", id = "a", order = 1),
+            dk.familieapp.data.PlannedMeal(date = "2026-10-13", title = "Suppe", id = "c", order = 3),
+        )
+        assertEquals(listOf("Tapas", "Is"), meals.onDate("2026-10-12").map { it.title })
+        // Ældre retter uden eget id bruger datoen som id.
+        val old = dk.familieapp.data.PlannedMeal(date = "2026-10-01", title = "Lasagne")
+        assertEquals("2026-10-01", dk.familieapp.data.Cols.meals.idOf(old))
     }
 
     @Test

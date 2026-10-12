@@ -26,6 +26,7 @@ import dk.familieapp.data.ChorePlan
 import dk.familieapp.data.Dates
 import dk.familieapp.data.DeviceCalendarRepo
 import dk.familieapp.data.ROLE_PARENT
+import dk.familieapp.data.onDate
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
@@ -70,8 +71,8 @@ fun TodayScreen(vm: AppViewModel, nav: NavController) {
         null
     }
 
-    val meal = meals.firstOrNull { it.date == today.toString() }
-    val cook = meal?.cook.orEmpty()
+    val todaysMeals = meals.onDate(today.toString())
+    val cook = todaysMeals.map { it.cook }.firstOrNull { it.isNotBlank() }.orEmpty()
     val open = shopping.filter { !it.checked }.sortedBy { it.createdAt }
     val week = ChorePlan.week(Dates.weekStart(today), templates, chores)
     val myChoresToday = week.filter { it.date == today.toString() && it.childId == me?.id }
@@ -108,7 +109,7 @@ fun TodayScreen(vm: AppViewModel, nav: NavController) {
             ) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Aftensmad i dag", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFCFE5D8))
-                    Text(meal?.title ?: "Ikke planlagt", fontSize = 26.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold)
+                    Text(if (todaysMeals.isEmpty()) "Ikke planlagt" else todaysMeals.joinToString(" · ") { it.title }, fontSize = 26.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold)
                     if (cook.isNotBlank()) {
                         Text("$cook laver mad", fontSize = 15.sp, color = Color(0xFFE6F1EA))
                     }
@@ -120,7 +121,7 @@ fun TodayScreen(vm: AppViewModel, nav: NavController) {
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Yellow, contentColor = Ink),
                     ) {
-                        Text(if (meal == null && isParent) "Planlæg aftensmad" else "Se ugens madplan", fontWeight = FontWeight.Bold)
+                        Text(if (todaysMeals.isEmpty() && isParent) "Planlæg aftensmad" else "Se ugens madplan", fontWeight = FontWeight.Bold)
                     }
                 }
             }

@@ -29,6 +29,7 @@ import androidx.navigation.NavController
 import dk.familieapp.data.Dates
 import dk.familieapp.data.PlannedMeal
 import dk.familieapp.data.Recipe
+import dk.familieapp.data.onDate
 import dk.familieapp.data.KIND_DESSERT
 import dk.familieapp.data.KIND_DINNER
 import dk.familieapp.data.ROLE_PARENT
@@ -88,7 +89,9 @@ private fun WeekPlan(
 ) {
     val context = LocalContext.current
     val me by vm.me.collectAsStateWithLifecycle()
-    var planDate by remember { mutableStateOf<LocalDate?>(null) }
+    val editable = me?.role == ROLE_PARENT
+    // Retten, der rettes, eller en ny ret (uden id) på en dag.
+    var editing by remember { mutableStateOf<PlannedMeal?>(null) }
 
     LazyColumn(
         modifier,
@@ -97,15 +100,16 @@ private fun WeekPlan(
     ) {
         items(7) { index ->
             val date = start.plusDays(index.toLong())
-            DayRow(
+            DayCard(
                 date = date,
-                meal = meals.firstOrNull { it.date == date.toString() },
+                meals = meals.onDate(date.toString()),
                 isToday = date == today,
-                onClick = { if (me?.role == ROLE_PARENT) planDate = date },
-                editable = me?.role == ROLE_PARENT,
+                editable = editable,
+                onEdit = { editing = it },
+                onAdd = { editing = PlannedMeal(date = date.toString()) },
             )
         }
-        if (me?.role == ROLE_PARENT) item {
+        if (editable) item {
             YellowButton(
                 text = "Læg ugens ingredienser på indkøbslisten",
                 onClick = {
@@ -120,57 +124,84 @@ private fun WeekPlan(
         }
     }
 
-    planDate?.let { date ->
+    editing?.let { meal ->
         PlanMealDialog(
-            date = date,
-            existing = meals.firstOrNull { it.date == date.toString() },
+            date = LocalDate.parse(meal.date),
+            existing = meal.takeIf { it.id.isNotBlank() },
             recipes = recipes,
             onSave = { title, recipeId, cook ->
-                vm.planMeal(date, title, recipeId, cook)
-                planDate = null
+                vm.saveMeal(meal.copy(title = title, recipeId = recipeId, cook = cook))
+                editing = null
             },
             onClear = {
-                vm.clearMeal(date)
-                planDate = null
+                vm.removeMeal(meal)
+                editing = null
             },
-            onDismiss = { planDate = null },
+            onDismiss = { editing = null },
         )
     }
 }
 
+/** Én dag på madplanen med alle dagens retter. Tryk på en ret for at rette den. */
 @Composable
-private fun DayRow(date: LocalDate, meal: PlannedMeal?, isToday: Boolean, onClick: () -> Unit, editable: Boolean = true) {
+private fun DayCard(
+    date: LocalDate,
+    meals: List<PlannedMeal>,
+    isToday: Boolean,
+    editable: Boolean,
+    onEdit: (PlannedMeal) -> Unit,
+    onAdd: () -> Unit,
+) {
     val background = if (isToday) Green else Color.White
     val textColor = if (isToday) Color.White else Ink
     val subColor = if (isToday) Color(0xFFE6F1EA) else Muted
-    Row(
+    Column(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
             .background(background)
-            .clickable(enabled = editable, onClick = onClick)
-            .heightIn(min = 60.dp)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = if (editable) 0.dp else 8.dp),
     ) {
-        Column(Modifier.width(52.dp)) {
-            Text(Dates.dayAbbr(date), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = subColor)
-            Text("${date.dayOfMonth}.", fontSize = 12.sp, color = subColor)
-        }
-        Column(Modifier.weight(1f)) {
-            if (meal == null) {
-                Text("Ikke planlagt", fontSize = 15.sp, color = subColor)
-            } else {
-                Text(meal.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = textColor)
-                if (meal.cook.isNotBlank()) {
-                    Text("${meal.cook} laver mad", fontSize = 13.sp, color = subColor)
+        Row(verticalAlignment = Alignment.Top) {
+            Column(
+                Modifier
+                    .width(52.dp)
+                    .padding(top = 6.dp),
+            ) {
+                Text(Dates.dayAbbr(date), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = subColor)
+                Text("${date.dayOfMonth}.", fontSize = 12.sp, color = subColor)
+            }
+            Column(Modifier.weight(1f)) {
+                if (meals.isEmpty()) {
+                    Text("Ikke planlagt", Modifier.padding(vertical = 6.dp), fontSize = 15.sp, color = subColor)
+                }
+                meals.forEach { meal ->
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable(enabled = editable) { onEdit(meal) }
+                            .padding(vertical = 6.dp),
+                    ) {
+                        Text(meal.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = textColor)
+                        if (meal.cook.isNotBlank()) {
+                            Text("${meal.cook} laver mad", fontSize = 13.sp, color = subColor)
+                        }
+                    }
                 }
             }
+            if (isToday) {
+                Box(Modifier.padding(top = 4.dp)) { Pill("I dag", Yellow) }
+            }
         }
-        if (isToday) {
-            Pill("I dag", Yellow)
-        } else if (meal == null && editable) {
-            Text("Tilføj", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Green)
+        if (editable) {
+            TextButton(
+                onClick = onAdd,
+                modifier = Modifier.align(Alignment.End),
+                colors = ButtonDefaults.textButtonColors(contentColor = if (isToday) Color.White else Green),
+            ) {
+                Text(if (meals.isEmpty()) "Tilføj ret" else "+ Tilføj ret", fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
@@ -280,7 +311,7 @@ private fun RecipeList(
                     Text(recipe.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                     Text(meta, fontSize = 13.sp, color = Muted)
                 }
-                if (me?.role == ROLE_PARENT && recipe.kind != KIND_DESSERT) FilledTonalIconButton(onClick = { pickFor = recipe }) {
+                if (me?.role == ROLE_PARENT) FilledTonalIconButton(onClick = { pickFor = recipe }) {
                     Icon(Icons.Filled.Add, contentDescription = "Læg ${recipe.name} på madplanen")
                 }
             }
@@ -317,7 +348,6 @@ fun PlanMealDialog(
     var recipeId by remember { mutableStateOf(existing?.recipeId.orEmpty()) }
     var cook by remember { mutableStateOf(existing?.cook.orEmpty()) }
     val suggestions = recipes
-        .filter { it.kind != KIND_DESSERT }
         .filter { title.isBlank() || it.name.contains(title, ignoreCase = true) }
         .sortedBy { it.name.lowercase() }
 
@@ -392,7 +422,7 @@ fun DayPickDialog(meals: List<PlannedMeal>, onPick: (LocalDate) -> Unit, onDismi
         text = {
             LazyColumn(Modifier.heightIn(max = 380.dp)) {
                 items(days, key = { it.toString() }) { date ->
-                    val planned = meals.firstOrNull { it.date == date.toString() }
+                    val planned = meals.onDate(date.toString())
                     Row(
                         Modifier
                             .fillMaxWidth()
@@ -407,10 +437,10 @@ fun DayPickDialog(meals: List<PlannedMeal>, onPick: (LocalDate) -> Unit, onDismi
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            planned?.title ?: "Ledig",
+                            if (planned.isEmpty()) "Ledig" else planned.joinToString(" · ") { it.title },
                             Modifier.weight(1f),
                             fontSize = 14.sp,
-                            color = if (planned == null) Green else Muted,
+                            color = if (planned.isEmpty()) Green else Muted,
                             maxLines = 1,
                         )
                     }

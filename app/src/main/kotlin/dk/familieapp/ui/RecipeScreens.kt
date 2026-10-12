@@ -33,6 +33,8 @@ import dk.familieapp.data.KIND_DINNER
 import dk.familieapp.data.Recipe
 import dk.familieapp.data.RecipeImporter
 import dk.familieapp.data.ROLE_PARENT
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -84,7 +86,7 @@ fun RecipeDetailScreen(vm: AppViewModel, id: String, nav: NavController) {
             ) {
                 Text(recipe.name, fontSize = 30.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold)
                 Text(meta, fontSize = 14.sp, color = Muted)
-                if (isParent && recipe.kind != KIND_DESSERT) Button(
+                if (isParent) Button(
                     onClick = { picking = true },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -193,6 +195,20 @@ private fun StepNumber(number: Int) {
 
 // ---------- Skriv eller ret opskrift ----------
 
+private val IngredientListSaver = listSaver<SnapshotStateList<Ingredient>, String>(
+    save = { list -> list.flatMap { listOf(it.name, it.amount) } },
+    restore = { flat ->
+        mutableStateListOf<Ingredient>().apply {
+            flat.chunked(2).forEach { add(Ingredient(it[0], it.getOrElse(1) { "" })) }
+        }
+    },
+)
+
+private val StringListSaver = listSaver<SnapshotStateList<String>, String>(
+    save = { it.toList() },
+    restore = { it.toMutableStateList() },
+)
+
 @Composable
 fun RecipeEditScreen(vm: AppViewModel, id: String, nav: NavController) {
     val recipes by vm.recipes.collectAsStateWithLifecycle()
@@ -241,12 +257,17 @@ private fun RecipeForm(
     onSave: (Recipe) -> Unit,
     onDelete: () -> Unit,
 ) {
-    var name by remember { mutableStateOf(initial.name) }
-    var minutes by remember { mutableStateOf(if (initial.minutes > 0) initial.minutes.toString() else "") }
-    var servings by remember { mutableStateOf(initial.servings.toString()) }
-    var kind by remember { mutableStateOf(initial.kind) }
-    val ingredients = remember { mutableStateListOf<Ingredient>().apply { addAll(initial.ingredients) } }
-    val steps = remember { mutableStateListOf<String>().apply { addAll(initial.steps) } }
+    // rememberSaveable: det skrevne overlever, når skærmen vendes eller appen lægges i baggrunden.
+    var name by rememberSaveable { mutableStateOf(initial.name) }
+    var minutes by rememberSaveable { mutableStateOf(if (initial.minutes > 0) initial.minutes.toString() else "") }
+    var servings by rememberSaveable { mutableStateOf(initial.servings.toString()) }
+    var kind by rememberSaveable { mutableStateOf(initial.kind) }
+    val ingredients = rememberSaveable(saver = IngredientListSaver) {
+        mutableStateListOf<Ingredient>().apply { addAll(initial.ingredients) }
+    }
+    val steps = rememberSaveable(saver = StringListSaver) {
+        mutableStateListOf<String>().apply { addAll(initial.steps) }
+    }
     var confirmDelete by remember { mutableStateOf(false) }
 
     val heading = when {

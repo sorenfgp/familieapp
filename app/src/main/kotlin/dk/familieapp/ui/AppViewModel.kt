@@ -37,6 +37,7 @@ import dk.familieapp.data.ShoppingItem
 import dk.familieapp.data.ShoppingMerge
 import dk.familieapp.data.Staple
 import dk.familieapp.data.newId
+import dk.familieapp.data.onDate
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -185,19 +186,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Madplan ----
 
-    fun planMeal(date: LocalDate, title: String, recipeId: String, cook: String) {
-        if (!isParent) return
-        put(Cols.meals, PlannedMeal(date.toString(), title, recipeId, cook))
+    /** Gemmer en ret. Uden id bliver det en ny ret på dagen, så en dag kan have flere retter. */
+    fun saveMeal(meal: PlannedMeal) {
+        if (!isParent || meal.title.isBlank()) return
+        put(Cols.meals, if (meal.id.isBlank()) meal.copy(id = newId(), order = now()) else meal)
     }
 
+    /** Lægger en opskrift på dagen som en ekstra ret. */
     fun planRecipe(date: LocalDate, recipe: Recipe) {
-        val cook = meals.value.firstOrNull { it.date == date.toString() }?.cook.orEmpty()
-        planMeal(date, recipe.name, recipe.id, cook)
+        val cook = meals.value.onDate(date.toString()).map { it.cook }.firstOrNull { it.isNotBlank() }.orEmpty()
+        saveMeal(PlannedMeal(date = date.toString(), title = recipe.name, recipeId = recipe.id, cook = cook))
     }
 
-    fun clearMeal(date: LocalDate) {
+    fun removeMeal(meal: PlannedMeal) {
         if (!isParent) return
-        _store.value?.delete(Cols.meals, listOf(date.toString()))
+        _store.value?.delete(Cols.meals, listOf(meal.id.ifBlank { meal.date }))
     }
 
     // ---- Familiekalender: kopi til enheder uden adgang til Google-kalenderen ----

@@ -49,6 +49,7 @@ import dk.familieapp.data.EventWho
 import dk.familieapp.data.Profile
 import dk.familieapp.data.ROLE_PARENT
 import dk.familieapp.data.Repeat
+import dk.familieapp.data.onDate
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -175,7 +176,7 @@ fun CalendarScreen(vm: AppViewModel) {
 
     val monthName = Dates.months[selected.monthValue - 1].replaceFirstChar { it.uppercase() }
     val dayEvents = events.filter { it.isOn(selected) }
-    val meal = meals.firstOrNull { it.date == selectedIso }
+    val dayMeals = meals.onDate(selectedIso)
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -303,17 +304,15 @@ fun CalendarScreen(vm: AppViewModel) {
                         profiles = profiles.orEmpty(),
                     )
                 }
-                if (meal != null) {
-                    item(key = "meal") {
-                        AgendaRow(
-                            color = Yellow,
-                            title = "Aftensmad: ${meal.title}",
-                            detail = if (meal.cook.isBlank()) "Fra madplanen" else "${meal.cook} laver mad · fra madplanen",
-                            onClick = null,
-                        )
-                    }
+                items(dayMeals, key = { "meal-" + it.id }) { meal ->
+                    AgendaRow(
+                        color = Yellow,
+                        title = "Madplan: ${meal.title}",
+                        detail = if (meal.cook.isBlank()) "Fra madplanen" else "${meal.cook} laver mad · fra madplanen",
+                        onClick = null,
+                    )
                 }
-                if ((local != null || readsCopy) && dayEvents.isEmpty() && meal == null) {
+                if ((local != null || readsCopy) && dayEvents.isEmpty() && dayMeals.isEmpty()) {
                     item(key = "empty") {
                         Text("Ingen aftaler denne dag.", Modifier.padding(vertical = 8.dp), color = Muted)
                     }

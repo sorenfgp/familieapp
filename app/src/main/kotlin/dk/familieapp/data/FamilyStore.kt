@@ -15,7 +15,7 @@ class Col<T : Any>(
 /** Alle familiens samlinger. Et nyt modul tilføjer sin samling her. */
 object Cols {
     val recipes = Col("recipes", Recipe::class.java, Recipe.serializer(), { it.id }, { r, id -> r.copy(id = id) })
-    val meals = Col("meals", PlannedMeal::class.java, PlannedMeal.serializer(), { it.date }, { m, id -> m.copy(date = id) })
+    val meals = Col("meals", PlannedMeal::class.java, PlannedMeal.serializer(), { it.id.ifBlank { it.date } }, { m, id -> m.copy(id = id, date = m.date.ifBlank { id }) })
     val shopping = Col("shopping", ShoppingItem::class.java, ShoppingItem.serializer(), { it.id }, { s, id -> s.copy(id = id) })
     val staples = Col("staples", Staple::class.java, Staple.serializer(), { it.id }, { s, id -> s.copy(id = id) })
     val profiles = Col("profiles", Profile::class.java, Profile.serializer(), { it.id }, { p, id -> p.copy(id = id) })
