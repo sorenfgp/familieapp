@@ -136,6 +136,7 @@ data class MirroredEvent(
     val location: String = "",
     val color: Int = 0,
     val description: String = "",
+    val recurring: Boolean = false,
 )
 
 /** Brugerens valg af afdeling for en vare, fx "Kartoffelmel" → "Kolonial". id er varens navn med små bogstaver. */

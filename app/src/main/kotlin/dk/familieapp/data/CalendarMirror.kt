@@ -43,6 +43,7 @@ object CalendarMirror {
                     location = it.location,
                     color = it.color,
                     description = it.description,
+                    recurring = it.recurring,
                 )
             }
             .distinctBy { it.id }
@@ -84,6 +85,7 @@ object CalendarMirror {
             firstDay = first,
             lastDay = last,
             description = copy.description,
+            recurring = copy.recurring,
         )
     }
 

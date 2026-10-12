@@ -86,21 +86,15 @@ private fun WeekList(
     modifier: Modifier,
 ) {
     var name by rememberSaveable { mutableStateOf("") }
-    var amount by rememberSaveable { mutableStateOf("") }
     var basketOpen by rememberSaveable { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
 
     fun add() {
         if (name.isBlank()) return
-        if (amount.isBlank()) {
-            // "2 l mælk" i navnefeltet bliver også til vare "Mælk" og mængde "2 l".
-            val parsed = RecipeImporter.splitIngredient(name)
-            vm.addShoppingItem(parsed.name, parsed.amount)
-        } else {
-            vm.addShoppingItem(name.trim().replaceFirstChar { it.uppercase() }, amount.trim())
-        }
+        // "2 l mælk" bliver til vare "Mælk" og mængde "2 l".
+        val parsed = RecipeImporter.splitIngredient(name)
+        vm.addShoppingItem(parsed.name, parsed.amount)
         name = ""
-        amount = ""
     }
 
     val groups = Categories.order.mapNotNull { category ->
@@ -118,41 +112,25 @@ private fun WeekList(
     ) {
         if (canEdit) {
             item(key = "add") {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("Tilføj vare") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(16.dp),
-                        keyboardOptions = SentenceCaps.copy(imeAction = ImeAction.Next),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = Color.White,
-                            unfocusedContainerColor = Color.White,
-                        ),
-                    )
-                    OutlinedTextField(
-                        value = amount,
-                        onValueChange = { amount = it },
-                        modifier = Modifier.width(96.dp),
-                        placeholder = { Text("Mængde") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(16.dp),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { add() }),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = Color.White,
-                            unfocusedContainerColor = Color.White,
-                        ),
-                    )
-                    FilledIconButton(onClick = { add() }, enabled = name.isNotBlank()) {
-                        Icon(Icons.Filled.Add, contentDescription = "Tilføj vare")
-                    }
-                }
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Tilføj vare, fx 2 l mælk") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(26.dp),
+                    trailingIcon = {
+                        IconButton(onClick = { add() }) {
+                            Icon(Icons.Filled.Add, contentDescription = "Tilføj vare")
+                        }
+                    },
+                    keyboardOptions = SentenceCaps.copy(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { add() }),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White,
+                    ),
+                )
             }
         }
         if (open.isEmpty() && done.isEmpty()) {

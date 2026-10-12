@@ -6,6 +6,7 @@ import android.Manifest
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.ContentUris
+import android.content.Context
 import android.content.Intent
 import android.provider.CalendarContract
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -15,8 +16,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -30,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -44,12 +48,25 @@ import dk.familieapp.data.DeviceCalendarRepo
 import dk.familieapp.data.EventWho
 import dk.familieapp.data.Profile
 import dk.familieapp.data.ROLE_PARENT
+import dk.familieapp.data.Repeat
 import kotlinx.coroutines.launch
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 private val calendarPermissions = arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
+
+private fun pickDate(context: Context, initial: LocalDate, onPick: (LocalDate) -> Unit) {
+    DatePickerDialog(
+        context,
+        { _, year, month, day -> onPick(LocalDate.of(year, month + 1, day)) },
+        initial.year,
+        initial.monthValue - 1,
+        initial.dayOfMonth,
+    ).show()
+}
 
 @Composable
 fun CalendarScreen(vm: AppViewModel) {
@@ -73,10 +90,16 @@ fun CalendarScreen(vm: AppViewModel) {
     }
 
     val today = LocalDate.now()
-    var weekOffset by rememberSaveable { mutableIntStateOf(0) }
+    // Ugevisning er standard, hver gang fanen åbnes.
+    var monthView by rememberSaveable { mutableStateOf(false) }
     var selectedIso by rememberSaveable { mutableStateOf(today.toString()) }
     val selected = LocalDate.parse(selectedIso)
-    val start = Dates.weekStart(today).plusWeeks(weekOffset.toLong())
+    val weekStart = Dates.weekStart(selected)
+    val monthStart = selected.withDayOfMonth(1)
+    val gridStart = Dates.weekStart(monthStart)
+    val gridEnd = Dates.weekStart(monthStart.plusMonths(1).minusDays(1)).plusDays(6)
+    val rangeStart = if (monthView) gridStart else weekStart
+    val rangeEnd = if (monthView) gridEnd else weekStart.plusDays(6)
 
     var allCalendars by remember { mutableStateOf(emptyList<DeviceCalendar>()) }
     var familyCalendar by remember { mutableStateOf<DeviceCalendar?>(null) }
@@ -92,12 +115,12 @@ fun CalendarScreen(vm: AppViewModel) {
         granted = repo.hasReadPermission()
         refresh += 1
     }
-    LaunchedEffect(granted, start, familyKey, refresh) {
+    LaunchedEffect(granted, rangeStart, rangeEnd, familyKey, refresh) {
         if (granted) {
             allCalendars = repo.calendars()
             val found = repo.findCalendar(familyKey, allCalendars)
             familyCalendar = found
-            localEvents = found?.let { repo.events(start, start.plusDays(6), it.id) }.orEmpty()
+            localEvents = found?.let { repo.events(rangeStart, rangeEnd, it.id) }.orEmpty()
             // Telefonen har kalenderen: opdatér kopien, som børnenes enheder læser.
             if (found != null) vm.syncCalendar()
         } else {
@@ -108,12 +131,11 @@ fun CalendarScreen(vm: AppViewModel) {
 
     // Har telefonen ikke selv kalenderen, vises kopien fra forældrenes telefon.
     val local = familyCalendar
-    val events = if (local != null) localEvents else CalendarMirror.eventsBetween(mirror, start, start.plusDays(6), zone)
+    val events = if (local != null) localEvents else CalendarMirror.eventsBetween(mirror, rangeStart, rangeEnd, zone)
     val readsCopy = local == null && familyKey.isNotBlank()
 
-    fun moveWeek(weeks: Int) {
-        weekOffset += weeks
-        selectedIso = selected.plusWeeks(weeks.toLong()).toString()
+    fun move(step: Long) {
+        selectedIso = (if (monthView) selected.plusMonths(step) else selected.plusWeeks(step)).toString()
     }
 
     fun show(event: CalendarEvent) {
@@ -136,28 +158,68 @@ fun CalendarScreen(vm: AppViewModel) {
         }
     }
 
+    /** Ændrer i familiekalenderen og opdaterer visningen og kopien bagefter. */
+    fun change(success: String, failure: String, action: suspend () -> Boolean) {
+        if (!repo.hasWritePermission()) {
+            permissionLauncher.launch(calendarPermissions)
+            context.toast("Giv appen adgang til kalenderen, og prøv igen")
+            return
+        }
+        scope.launch {
+            val ok = action()
+            context.toast(if (ok) success else failure)
+            refresh += 1
+            vm.syncCalendar(force = true)
+        }
+    }
+
     val monthName = Dates.months[selected.monthValue - 1].replaceFirstChar { it.uppercase() }
     val dayEvents = events.filter { it.isOn(selected) }
     val meal = meals.firstOrNull { it.date == selectedIso }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            ScreenHeader("$monthName ${selected.year} · uge ${Dates.weekNumber(start)}", "Kalender") {
-                IconButton(onClick = { moveWeek(-1) }) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Forrige uge")
+            ScreenHeader(
+                if (monthView) "$monthName ${selected.year}"
+                else "$monthName ${selected.year} · uge ${Dates.weekNumber(weekStart)}",
+                "Kalender",
+            ) {
+                IconButton(onClick = { move(-1) }) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                        contentDescription = if (monthView) "Forrige måned" else "Forrige uge",
+                    )
                 }
-                IconButton(onClick = { moveWeek(1) }) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Næste uge")
+                IconButton(onClick = { move(1) }) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = if (monthView) "Næste måned" else "Næste uge",
+                    )
                 }
             }
+            Segmented(
+                options = listOf("Uge", "Måned"),
+                selected = if (monthView) 1 else 0,
+                onSelect = { monthView = it == 1 },
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+            )
 
-            WeekStrip(start, selected, today, events) { selectedIso = it.toString() }
+            if (!monthView) {
+                WeekStrip(weekStart, selected, today, events) { selectedIso = it.toString() }
+            }
 
             LazyColumn(
                 Modifier.weight(1f),
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (monthView) {
+                    item(key = "month") {
+                        MonthGrid(monthStart, gridStart, gridEnd, selected, today, events) {
+                            selectedIso = it.toString()
+                        }
+                    }
+                }
                 item(key = "status") {
                     when {
                         familyKey.isBlank() && isParent && !granted -> InfoCard(
@@ -231,9 +293,11 @@ fun CalendarScreen(vm: AppViewModel) {
                     AgendaRow(
                         color = Color(event.color or 0xFF000000.toInt()),
                         title = event.title,
-                        detail = listOf(CalendarMath.timeLabel(event, selected, zone), event.location)
-                            .filter { it.isNotBlank() }
-                            .joinToString(" · "),
+                        detail = listOf(
+                            CalendarMath.timeLabel(event, selected, zone),
+                            event.location,
+                            if (event.recurring) "fast" else "",
+                        ).filter { it.isNotBlank() }.joinToString(" · "),
                         onClick = { openEvent = event },
                         who = EventWho.parse(event.description),
                         profiles = profiles.orEmpty(),
@@ -288,14 +352,23 @@ fun CalendarScreen(vm: AppViewModel) {
         NewEventDialog(
             initialDate = selected,
             profiles = profiles.orEmpty(),
-            onSave = { title, location, date, startTime, endTime, who ->
+            onSave = { title, location, date, startTime, endTime, who, repeat ->
                 creating = false
                 if (calendar != null) {
-                    scope.launch {
-                        val ok = repo.insertEvent(calendar.id, title, location, date, startTime, endTime, EventWho.apply("", who))
-                        context.toast(if (ok) "Aftalen er gemt i $familyName" else "Aftalen kunne ikke gemmes")
-                        refresh += 1
-                        vm.syncCalendar(force = true)
+                    change(
+                        success = if (repeat != null) "Den faste aftale er gemt i $familyName" else "Aftalen er gemt i $familyName",
+                        failure = "Aftalen kunne ikke gemmes",
+                    ) {
+                        repo.insertEvent(
+                            calendarId = calendar.id,
+                            title = title,
+                            location = location,
+                            date = date,
+                            start = startTime,
+                            end = endTime,
+                            description = EventWho.apply("", who),
+                            repeat = repeat,
+                        )
                     }
                 }
             },
@@ -304,26 +377,41 @@ fun CalendarScreen(vm: AppViewModel) {
     }
 
     openEvent?.let { event ->
-        val canEdit = local?.canWrite == true
         EventDialog(
             event = event,
             day = selected,
             zone = zone,
             profiles = profiles.orEmpty(),
-            canEdit = canEdit,
+            canEdit = local?.canWrite == true,
             canOpen = local != null,
             onSaveWho = { who ->
                 openEvent = null
-                if (!repo.hasWritePermission()) {
-                    permissionLauncher.launch(calendarPermissions)
-                    context.toast("Giv appen adgang til kalenderen, og prøv igen")
-                } else {
-                    scope.launch {
-                        val ok = repo.updateDescription(event.eventId, EventWho.apply(event.description, who))
-                        context.toast(if (ok) "Gemt i $familyName" else "Aftalen kunne ikke ændres")
-                        refresh += 1
-                        vm.syncCalendar(force = true)
-                    }
+                change("Gemt i $familyName", "Aftalen kunne ikke ændres") {
+                    repo.updateDescription(event.eventId, EventWho.apply(event.description, who))
+                }
+            },
+            onMove = { newDate ->
+                openEvent = null
+                change("Flyttet til ${Dates.long(newDate)}", "Aftalen kunne ikke flyttes") {
+                    repo.moveEvent(event, newDate)
+                }
+            },
+            onCancelOnce = {
+                openEvent = null
+                change("Aflyst ${Dates.long(event.firstDay)}", "Aftalen kunne ikke aflyses") {
+                    repo.cancelOccurrence(event.eventId, event.begin)
+                }
+            },
+            onCancelRange = { from, to ->
+                openEvent = null
+                change("Aflyst fra ${Dates.short(from)} til ${Dates.short(to)}", "Ingen gange at aflyse i perioden") {
+                    repo.cancelOccurrences(event.eventId, from, to) > 0
+                }
+            },
+            onDelete = {
+                openEvent = null
+                change("Aftalen er slettet", "Aftalen kunne ikke slettes") {
+                    repo.deleteEvent(event.eventId)
                 }
             },
             onOpen = {
@@ -406,6 +494,94 @@ private fun WeekStrip(
     }
 }
 
+/** Hele måneden i et gitter. Prikkerne viser, hvor mange aftaler dagen har (højst tre). */
+@Composable
+private fun MonthGrid(
+    month: LocalDate,
+    gridStart: LocalDate,
+    gridEnd: LocalDate,
+    selected: LocalDate,
+    today: LocalDate,
+    events: List<CalendarEvent>,
+    onSelect: (LocalDate) -> Unit,
+) {
+    val weeks = ((ChronoUnit.DAYS.between(gridStart, gridEnd) + 1) / 7).toInt()
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color.White)
+            .padding(8.dp),
+    ) {
+        Row(Modifier.fillMaxWidth()) {
+            Dates.dayShort.forEach { label ->
+                Text(
+                    label,
+                    Modifier
+                        .weight(1f)
+                        .padding(vertical = 4.dp),
+                    textAlign = TextAlign.Center,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Muted,
+                )
+            }
+        }
+        for (week in 0 until weeks) {
+            Row(Modifier.fillMaxWidth()) {
+                for (index in 0..6) {
+                    val day = gridStart.plusDays(week * 7L + index)
+                    val inMonth = day.month == month.month
+                    val isSelected = day == selected
+                    val count = events.count { it.isOn(day) }
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .height(50.dp)
+                            .padding(2.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                when {
+                                    isSelected -> Green
+                                    day == today -> Mint
+                                    else -> Color.Transparent
+                                }
+                            )
+                            .clickable { onSelect(day) },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text(
+                            "${day.dayOfMonth}",
+                            fontSize = 15.sp,
+                            fontWeight = if (day == today || isSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = when {
+                                isSelected -> Color.White
+                                inMonth -> Ink
+                                else -> Muted.copy(alpha = 0.5f)
+                            },
+                        )
+                        Row(
+                            Modifier.height(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            repeat(minOf(count, 3)) {
+                                Box(
+                                    Modifier
+                                        .size(5.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isSelected) Yellow else Green)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun InfoCard(title: String, text: String, button: String?, onClick: () -> Unit, note: String? = null) {
     Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), color = Color.White) {
@@ -470,7 +646,7 @@ private fun CalendarChooser(
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "Kalenderen bruges af hele familien. Den skal være delt med alle familiens Google-konti.",
+                        "Kalenderen bruges af hele familien. Forældrene skal have adgang til den i Google Kalender.",
                         fontSize = 14.sp,
                         color = Muted,
                     )
@@ -515,7 +691,15 @@ private fun CalendarChooser(
 private fun NewEventDialog(
     initialDate: LocalDate,
     profiles: List<Profile>,
-    onSave: (title: String, location: String, date: LocalDate, start: LocalTime?, end: LocalTime?, who: List<String>) -> Unit,
+    onSave: (
+        title: String,
+        location: String,
+        date: LocalDate,
+        start: LocalTime?,
+        end: LocalTime?,
+        who: List<String>,
+        repeat: Repeat?,
+    ) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -526,12 +710,19 @@ private fun NewEventDialog(
     var start by remember { mutableStateOf(LocalTime.of(17, 0)) }
     var end by remember { mutableStateOf(LocalTime.of(18, 0)) }
     var who by remember { mutableStateOf(listOf(EventWho.ALL)) }
+    // 0 = ingen gentagelse, 1 = hver uge, 2 = hver 2. uge
+    var repeatEvery by remember { mutableIntStateOf(0) }
+    var weekdays by remember { mutableStateOf(setOf(initialDate.dayOfWeek)) }
+    var until by remember { mutableStateOf<LocalDate?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Ny aftale") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
@@ -542,17 +733,14 @@ private fun NewEventDialog(
                 )
                 OutlinedButton(
                     onClick = {
-                        DatePickerDialog(
-                            context,
-                            { _, year, month, day -> date = LocalDate.of(year, month + 1, day) },
-                            date.year,
-                            date.monthValue - 1,
-                            date.dayOfMonth,
-                        ).show()
+                        pickDate(context, date) {
+                            date = it
+                            if (repeatEvery == 0) weekdays = setOf(it.dayOfWeek)
+                        }
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(Dates.long(date).replaceFirstChar { it.uppercase() })
+                    Text((if (repeatEvery > 0) "Fra " else "") + Dates.long(date))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Hele dagen", Modifier.weight(1f))
@@ -590,6 +778,37 @@ private fun NewEventDialog(
                         ) { Text("Til ${CalendarMath.clock(end)}") }
                     }
                 }
+
+                Text("Gentag", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Muted)
+                Segmented(
+                    options = listOf("Nej", "Hver uge", "Hver 2. uge"),
+                    selected = repeatEvery,
+                    onSelect = { repeatEvery = it },
+                )
+                if (repeatEvery > 0) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        DayOfWeek.values().forEach { day ->
+                            val on = day in weekdays
+                            FilterChip(
+                                selected = on,
+                                onClick = {
+                                    // Mindst én dag skal være valgt.
+                                    weekdays = if (on && weekdays.size > 1) weekdays - day else weekdays + day
+                                },
+                                label = { Text(Dates.dayShort[day.value - 1]) },
+                            )
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton(onClick = { pickDate(context, until ?: date.plusMonths(3)) { until = it } }) {
+                            Text(until?.let { "Til og med ${Dates.short(it)}" } ?: "Ingen slutdato")
+                        }
+                        if (until != null) {
+                            TextButton(onClick = { until = null }) { Text("Fjern") }
+                        }
+                    }
+                }
+
                 OutlinedTextField(
                     value = location,
                     onValueChange = { location = it },
@@ -605,7 +824,15 @@ private fun NewEventDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    onSave(title.trim(), location.trim(), date, if (allDay) null else start, if (allDay) null else end, who)
+                    onSave(
+                        title.trim(),
+                        location.trim(),
+                        date,
+                        if (allDay) null else start,
+                        if (allDay) null else end,
+                        who,
+                        if (repeatEvery > 0) Repeat(weekdays, repeatEvery, until) else null,
+                    )
                 },
                 enabled = title.isNotBlank(),
             ) { Text("Gem") }
@@ -668,18 +895,30 @@ private fun EventDialog(
     canEdit: Boolean,
     canOpen: Boolean,
     onSaveWho: (List<String>) -> Unit,
+    onMove: (LocalDate) -> Unit,
+    onCancelOnce: () -> Unit,
+    onCancelRange: (LocalDate, LocalDate) -> Unit,
+    onDelete: () -> Unit,
     onOpen: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
     val initial = remember(event) { EventWho.parse(event.description).orEmpty() }
     var who by remember(event) { mutableStateOf(initial) }
+    // "delete", "cancel" eller "series", mens der bedes om bekræftelse.
+    var confirm by remember(event) { mutableStateOf<String?>(null) }
+    var choosingRange by remember(event) { mutableStateOf(false) }
     val notes = EventWho.strip(event.description)
+    val dangerColors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(event.title) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Text(
                     listOf(
                         Dates.long(day).replaceFirstChar { it.uppercase() },
@@ -689,21 +928,40 @@ private fun EventDialog(
                     fontSize = 14.sp,
                     color = Muted,
                 )
+                if (event.recurring) {
+                    Text("Fast aftale", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Green)
+                }
                 if (notes.isNotBlank()) Text(notes, fontSize = 15.sp)
                 Text("Hvem", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Muted)
                 if (canEdit) {
                     WhoPicker(profiles, who) { who = it }
+                    if (event.recurring) {
+                        Text("For en fast aftale gælder \"hvem\" alle gange.", fontSize = 12.sp, color = Muted)
+                    }
                 } else if (initial.isEmpty()) {
                     Text("Ikke angivet", fontSize = 15.sp, color = Muted)
                 } else {
                     WhoBadges(initial, profiles)
                 }
                 if (canEdit) {
-                    Text(
-                        "Gentages aftalen, gælder valget hele serien.",
-                        fontSize = 12.sp,
-                        color = Muted,
-                    )
+                    Text("Ændr", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Muted)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        OutlinedButton(onClick = { pickDate(context, day) { onMove(it) } }) {
+                            Text(if (event.recurring) "Flyt denne gang" else "Flyt til anden dato")
+                        }
+                        if (event.recurring) {
+                            OutlinedButton(onClick = { confirm = "cancel" }) { Text("Aflys denne gang") }
+                            OutlinedButton(onClick = { choosingRange = true }) { Text("Aflys i en periode") }
+                            OutlinedButton(onClick = { confirm = "series" }, colors = dangerColors) {
+                                Text("Slet hele serien")
+                            }
+                        } else {
+                            OutlinedButton(onClick = { confirm = "delete" }, colors = dangerColors) { Text("Slet") }
+                        }
+                    }
                 }
             }
         },
@@ -718,6 +976,86 @@ private fun EventDialog(
             if (canOpen) {
                 TextButton(onClick = onOpen) { Text("Åbn i Google Kalender") }
             }
+        },
+    )
+
+    confirm?.let { kind ->
+        AlertDialog(
+            onDismissRequest = { confirm = null },
+            title = {
+                Text(
+                    when (kind) {
+                        "cancel" -> "Aflys ${Dates.long(day)}?"
+                        "series" -> "Slet hele serien?"
+                        else -> "Slet aftalen?"
+                    }
+                )
+            },
+            text = {
+                Text(
+                    when (kind) {
+                        "cancel" -> "Kun denne gang aflyses. De andre gange står stadig i kalenderen."
+                        "series" -> "Alle gange af \"${event.title}\" slettes fra familiekalenderen."
+                        else -> "\"${event.title}\" slettes fra familiekalenderen."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirm = null
+                    if (kind == "cancel") onCancelOnce() else onDelete()
+                }) { Text(if (kind == "cancel") "Aflys" else "Slet") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirm = null }) { Text("Annullér") }
+            },
+        )
+    }
+
+    if (choosingRange) {
+        CancelRangeDialog(
+            initialFrom = day,
+            onConfirm = { from, to ->
+                choosingRange = false
+                onCancelRange(from, to)
+            },
+            onDismiss = { choosingRange = false },
+        )
+    }
+}
+
+/** Aflys alle gange af en fast aftale i en periode, fx en ferie. */
+@Composable
+private fun CancelRangeDialog(
+    initialFrom: LocalDate,
+    onConfirm: (LocalDate, LocalDate) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    var from by remember { mutableStateOf(initialFrom) }
+    var to by remember { mutableStateOf(initialFrom.plusDays(6)) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Aflys i en periode") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Alle gange i perioden aflyses. Resten af serien står stadig i kalenderen.", fontSize = 14.sp, color = Muted)
+                OutlinedButton(onClick = { pickDate(context, from) { from = it } }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Fra ${Dates.long(from)}")
+                }
+                OutlinedButton(onClick = { pickDate(context, to) { to = it } }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Til og med ${Dates.long(to)}")
+                }
+                if (to.isBefore(from)) {
+                    Text("Slutdatoen ligger før startdatoen.", color = MaterialTheme.colorScheme.error, fontSize = 14.sp)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(from, to) }, enabled = !to.isBefore(from)) { Text("Aflys") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Annullér") }
         },
     )
 }

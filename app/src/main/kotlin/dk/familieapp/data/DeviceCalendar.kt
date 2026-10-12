@@ -5,6 +5,7 @@ import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.provider.CalendarContract.Calendars
 import android.provider.CalendarContract.Events
 import android.provider.CalendarContract.Instances
@@ -16,6 +17,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZoneOffset
+import java.time.DayOfWeek
 import java.time.format.DateTimeFormatter
 
 /**
@@ -43,6 +45,8 @@ data class CalendarEvent(
     val firstDay: LocalDate,
     val lastDay: LocalDate,
     val description: String = "",
+    /** Del af en fast (gentaget) aftale. */
+    val recurring: Boolean = false,
 ) {
     fun isOn(day: LocalDate): Boolean = !day.isBefore(firstDay) && !day.isAfter(lastDay)
 }
@@ -164,6 +168,8 @@ class DeviceCalendarRepo(private val context: Context) {
                             Instances.CALENDAR_ID,
                             Instances.DISPLAY_COLOR,
                             Instances.DESCRIPTION,
+                            Instances.RRULE,
+                            Instances.STATUS,
                         ),
                         null,
                         null,
@@ -171,6 +177,7 @@ class DeviceCalendarRepo(private val context: Context) {
                     )?.use { cursor ->
                         while (cursor.moveToNext()) {
                             if (cursor.getLong(6) != calendarId) continue
+                            if (cursor.getInt(10) == Events.STATUS_CANCELED) continue
                             val begin = cursor.getLong(2)
                             val end = cursor.getLong(3)
                             val allDay = cursor.getInt(4) == 1
@@ -188,6 +195,7 @@ class DeviceCalendarRepo(private val context: Context) {
                                     firstDay = first,
                                     lastDay = last,
                                     description = cursor.getString(8) ?: "",
+                                    recurring = !cursor.getString(9).isNullOrBlank(),
                                 )
                             }
                         }
@@ -197,7 +205,10 @@ class DeviceCalendarRepo(private val context: Context) {
             result.sortedWith(compareByDescending<CalendarEvent> { it.allDay }.thenBy { it.begin })
         }
 
-    /** Opretter en aftale i [calendarId]. [start] = null betyder heldagsaftale. */
+    /**
+     * Opretter en aftale i [calendarId]. [start] = null betyder heldagsaftale.
+     * Med [repeat] bliver det en fast aftale, der starter på første valgte ugedag fra [date].
+     */
     suspend fun insertEvent(
         calendarId: Long,
         title: String,
@@ -206,31 +217,134 @@ class DeviceCalendarRepo(private val context: Context) {
         start: LocalTime?,
         end: LocalTime?,
         description: String = "",
+        repeat: Repeat? = null,
     ): Boolean = withContext(Dispatchers.IO) {
         if (!hasWritePermission()) return@withContext false
+        val zone = ZoneId.systemDefault()
+        val recurring = repeat != null && repeat.weekdays.isNotEmpty()
+        val firstDate = if (recurring) RRules.firstDate(date, repeat!!.weekdays) else date
         val values = ContentValues().apply {
             put(Events.CALENDAR_ID, calendarId)
             put(Events.TITLE, title)
             put(Events.EVENT_LOCATION, location)
             put(Events.DESCRIPTION, description)
             if (start == null) {
-                val begin = date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-                put(Events.DTSTART, begin)
-                put(Events.DTEND, begin + 24 * 60 * 60 * 1000L)
+                put(Events.DTSTART, firstDate.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
                 put(Events.ALL_DAY, 1)
                 put(Events.EVENT_TIMEZONE, "UTC")
             } else {
-                val zone = ZoneId.systemDefault()
-                val begin = date.atTime(start).atZone(zone).toInstant().toEpochMilli()
-                var finish = date.atTime(end ?: start.plusHours(1)).atZone(zone).toInstant().toEpochMilli()
-                if (finish <= begin) finish = begin + 60 * 60 * 1000L
-                put(Events.DTSTART, begin)
-                put(Events.DTEND, finish)
+                put(Events.DTSTART, firstDate.atTime(start).atZone(zone).toInstant().toEpochMilli())
                 put(Events.ALL_DAY, 0)
                 put(Events.EVENT_TIMEZONE, zone.id)
             }
+            val minutes = if (start == null) {
+                24 * 60L
+            } else {
+                val length = java.time.Duration.between(start, end ?: start.plusHours(1)).toMinutes()
+                if (length > 0) length else 60L
+            }
+            if (recurring) {
+                // Faste aftaler har en varighed i stedet for et sluttidspunkt.
+                put(Events.DURATION, RRules.duration(minutes, start == null))
+                put(Events.RRULE, RRules.weekly(repeat!!, start == null, zone))
+            } else {
+                val begin = getAsLong(Events.DTSTART)
+                put(Events.DTEND, begin + minutes * 60 * 1000L)
+            }
         }
         runCatching { context.contentResolver.insert(Events.CONTENT_URI, values) != null }.getOrDefault(false)
+    }
+
+    /** Sletter en aftale. For en fast aftale slettes hele serien. */
+    suspend fun deleteEvent(eventId: Long): Boolean = withContext(Dispatchers.IO) {
+        if (!hasWritePermission()) return@withContext false
+        runCatching {
+            context.contentResolver.delete(ContentUris.withAppendedId(Events.CONTENT_URI, eventId), null, null) > 0
+        }.getOrDefault(false)
+    }
+
+    /** Aflyser én gang af en fast aftale. [instanceBegin] er starttidspunktet for netop den gang. */
+    suspend fun cancelOccurrence(eventId: Long, instanceBegin: Long): Boolean = withContext(Dispatchers.IO) {
+        if (!hasWritePermission()) return@withContext false
+        val values = ContentValues().apply {
+            put(Events.ORIGINAL_INSTANCE_TIME, instanceBegin)
+            put(Events.STATUS, Events.STATUS_CANCELED)
+        }
+        runCatching {
+            context.contentResolver.insert(
+                Uri.withAppendedPath(Events.CONTENT_EXCEPTION_URI, eventId.toString()),
+                values,
+            ) != null
+        }.getOrDefault(false)
+    }
+
+    /** Aflyser alle gange af en fast aftale fra [from] til og med [to], fx i en ferie. Returnerer antallet. */
+    suspend fun cancelOccurrences(eventId: Long, from: LocalDate, to: LocalDate): Int {
+        val calendarEvents = instancesOf(eventId, from, to)
+        var cancelled = 0
+        calendarEvents.forEach { if (cancelOccurrence(eventId, it)) cancelled++ }
+        return cancelled
+    }
+
+    private suspend fun instancesOf(eventId: Long, from: LocalDate, to: LocalDate): List<Long> =
+        withContext(Dispatchers.IO) {
+            val result = mutableListOf<Long>()
+            val zone = ZoneId.systemDefault()
+            val uri = Instances.CONTENT_URI.buildUpon().also {
+                ContentUris.appendId(it, from.minusDays(1).atStartOfDay(zone).toInstant().toEpochMilli())
+                ContentUris.appendId(it, to.plusDays(2).atStartOfDay(zone).toInstant().toEpochMilli())
+            }.build()
+            runCatching {
+                context.contentResolver.query(
+                    uri,
+                    arrayOf(Instances.EVENT_ID, Instances.BEGIN, Instances.END, Instances.ALL_DAY, Instances.STATUS),
+                    null,
+                    null,
+                    null,
+                )?.use { cursor ->
+                    while (cursor.moveToNext()) {
+                        if (cursor.getLong(0) != eventId || cursor.getInt(4) == Events.STATUS_CANCELED) continue
+                        val begin = cursor.getLong(1)
+                        val (first, _) = CalendarMath.days(begin, cursor.getLong(2), cursor.getInt(3) == 1, zone)
+                        if (!first.isBefore(from) && !first.isAfter(to)) result += begin
+                    }
+                }
+            }
+            result
+        }
+
+    /**
+     * Flytter en aftale til [newDate] og beholder klokkeslættet.
+     * For en fast aftale flyttes kun denne ene gang.
+     */
+    suspend fun moveEvent(event: CalendarEvent, newDate: LocalDate): Boolean = withContext(Dispatchers.IO) {
+        if (!hasWritePermission()) return@withContext false
+        val days = java.time.temporal.ChronoUnit.DAYS.between(event.firstDay, newDate)
+        if (days == 0L) return@withContext true
+        val zone: ZoneId = if (event.allDay) ZoneOffset.UTC else ZoneId.systemDefault()
+        val newBegin = Instant.ofEpochMilli(event.begin).atZone(zone).plusDays(days).toInstant().toEpochMilli()
+        val newEnd = Instant.ofEpochMilli(event.end).atZone(zone).plusDays(days).toInstant().toEpochMilli()
+        val values = ContentValues().apply {
+            put(Events.DTSTART, newBegin)
+            put(Events.DTEND, newEnd)
+        }
+        runCatching {
+            if (event.recurring) {
+                values.put(Events.ORIGINAL_INSTANCE_TIME, event.begin)
+                values.put(Events.STATUS, Events.STATUS_CONFIRMED)
+                context.contentResolver.insert(
+                    Uri.withAppendedPath(Events.CONTENT_EXCEPTION_URI, event.eventId.toString()),
+                    values,
+                ) != null
+            } else {
+                context.contentResolver.update(
+                    ContentUris.withAppendedId(Events.CONTENT_URI, event.eventId),
+                    values,
+                    null,
+                    null,
+                ) > 0
+            }
+        }.getOrDefault(false)
     }
 
     /** Retter beskrivelsen (fx "Hvem: Ida"). For en gentagen aftale gælder det hele serien. */
@@ -241,4 +355,46 @@ class DeviceCalendarRepo(private val context: Context) {
             context.contentResolver.update(ContentUris.withAppendedId(Events.CONTENT_URI, eventId), values, null, null) > 0
         }.getOrDefault(false)
     }
+}
+
+/** En fast aftale: hver [intervalWeeks]. uge på [weekdays], evt. til og med [until]. */
+data class Repeat(
+    val weekdays: Set<DayOfWeek>,
+    val intervalWeeks: Int = 1,
+    val until: LocalDate? = null,
+)
+
+/** Gentagelsesregler i det format, Google Kalender bruger (RFC 5545). */
+object RRules {
+    private val codes = mapOf(
+        DayOfWeek.MONDAY to "MO",
+        DayOfWeek.TUESDAY to "TU",
+        DayOfWeek.WEDNESDAY to "WE",
+        DayOfWeek.THURSDAY to "TH",
+        DayOfWeek.FRIDAY to "FR",
+        DayOfWeek.SATURDAY to "SA",
+        DayOfWeek.SUNDAY to "SU",
+    )
+    private val utcStamp = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
+
+    fun weekly(repeat: Repeat, allDay: Boolean, zone: ZoneId): String {
+        val parts = mutableListOf("FREQ=WEEKLY", "WKST=MO")
+        if (repeat.intervalWeeks > 1) parts += "INTERVAL=${repeat.intervalWeeks}"
+        parts += "BYDAY=" + repeat.weekdays.sortedBy { it.value }.joinToString(",") { codes.getValue(it) }
+        repeat.until?.let { until ->
+            parts += if (allDay) {
+                "UNTIL=" + until.format(DateTimeFormatter.BASIC_ISO_DATE)
+            } else {
+                val lastMoment = until.plusDays(1).atStartOfDay(zone).minusSeconds(1).withZoneSameInstant(ZoneOffset.UTC)
+                "UNTIL=" + lastMoment.format(utcStamp)
+            }
+        }
+        return parts.joinToString(";")
+    }
+
+    /** Første dag fra og med [from], der er en af [weekdays]. */
+    fun firstDate(from: LocalDate, weekdays: Set<DayOfWeek>): LocalDate =
+        (0L..6L).map { from.plusDays(it) }.firstOrNull { it.dayOfWeek in weekdays } ?: from
+
+    fun duration(minutes: Long, allDay: Boolean): String = if (allDay) "P1D" else "PT${minutes}M"
 }
