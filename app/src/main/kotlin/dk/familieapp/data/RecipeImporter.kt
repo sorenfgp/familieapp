@@ -67,6 +67,7 @@ object RecipeImporter {
             ingredients = texts(node["recipeIngredient"]).map { splitIngredient(it) },
             steps = steps(node["recipeInstructions"]),
             sourceUrl = url,
+            kind = guessKind(node),
         )
     }
 
@@ -96,6 +97,22 @@ object RecipeImporter {
             else -> emptyList()
         }
         else -> emptyList()
+    }
+
+    private val dessertWords = listOf(
+        "dessert", "kage", "kager", "småkage", "cookie", "cake", "muffin", "tærte", "pie",
+        "pudding", "budding", "mousse", "trifle", "sorbet", "is", "flødeis", "sweet", "brownie",
+    )
+
+    /** Dessert, hvis sidens kategori, nøgleord eller navn tyder på det. Ellers aftensmad. */
+    private fun guessKind(node: JsonObject): String {
+        val text = (texts(node["recipeCategory"]) + texts(node["keywords"]) + texts(node["name"]))
+            .joinToString(" ").lowercase()
+        val words = text.split(Regex("[^\\p{L}]+")).filter { it.isNotEmpty() }
+        val isDessert = dessertWords.any { key ->
+            if (key.length <= 2) words.any { it == key } else words.any { it.contains(key) }
+        }
+        return if (isDessert) KIND_DESSERT else KIND_DINNER
     }
 
     /** Fjerner HTML-tags og -entiteter. */

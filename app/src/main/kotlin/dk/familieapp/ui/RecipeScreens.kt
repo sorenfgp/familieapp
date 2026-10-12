@@ -28,6 +28,8 @@ import androidx.navigation.NavController
 import dk.familieapp.data.Dates
 import dk.familieapp.data.Ingredient
 import dk.familieapp.data.NoRecipeFoundException
+import dk.familieapp.data.KIND_DESSERT
+import dk.familieapp.data.KIND_DINNER
 import dk.familieapp.data.Recipe
 import dk.familieapp.data.RecipeImporter
 import dk.familieapp.data.ROLE_PARENT
@@ -82,7 +84,7 @@ fun RecipeDetailScreen(vm: AppViewModel, id: String, nav: NavController) {
             ) {
                 Text(recipe.name, fontSize = 30.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold)
                 Text(meta, fontSize = 14.sp, color = Muted)
-                if (isParent) Button(
+                if (isParent && recipe.kind != KIND_DESSERT) Button(
                     onClick = { picking = true },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -242,6 +244,7 @@ private fun RecipeForm(
     var name by remember { mutableStateOf(initial.name) }
     var minutes by remember { mutableStateOf(if (initial.minutes > 0) initial.minutes.toString() else "") }
     var servings by remember { mutableStateOf(initial.servings.toString()) }
+    var kind by remember { mutableStateOf(initial.kind) }
     val ingredients = remember { mutableStateListOf<Ingredient>().apply { addAll(initial.ingredients) } }
     val steps = remember { mutableStateListOf<String>().apply { addAll(initial.steps) } }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -260,6 +263,7 @@ private fun RecipeForm(
                         initial.copy(
                             name = name.trim(),
                             minutes = minutes.toIntOrNull() ?: 0,
+                            kind = kind,
                             servings = servings.toIntOrNull() ?: 4,
                             ingredients = ingredients
                                 .filter { it.name.isNotBlank() }
@@ -308,6 +312,12 @@ private fun RecipeForm(
                 )
             }
 
+            SectionLabel("Type")
+            Segmented(
+                options = listOf("Aftensmad", "Dessert"),
+                selected = if (kind == KIND_DESSERT) 1 else 0,
+                onSelect = { kind = if (it == 1) KIND_DESSERT else KIND_DINNER },
+            )
             SectionLabel("Ingredienser")
             ingredients.forEachIndexed { index, ingredient ->
                 Row(

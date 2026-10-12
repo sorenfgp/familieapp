@@ -6,6 +6,9 @@ import java.util.UUID
 // Alle felter har standardværdier, så Firestore kan oprette objekterne.
 
 const val ROLE_PARENT = "parent"
+
+const val KIND_DINNER = "dinner"
+const val KIND_DESSERT = "dessert"
 const val ROLE_CHILD = "child"
 
 const val CHORE_OPEN = "open"
@@ -28,6 +31,8 @@ data class Recipe(
     val steps: List<String> = emptyList(),
     val sourceUrl: String = "",
     val createdAt: Long = 0,
+    /** Aftensmad ([KIND_DINNER]) eller dessert ([KIND_DESSERT]). */
+    val kind: String = KIND_DINNER,
 )
 
 /** Én ret på madplanen. [date] er ISO-dato (2026-10-10) og bruges også som id. */

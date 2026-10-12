@@ -74,6 +74,20 @@ class RecipeImporterTest {
     }
 
     @Test
+    fun guessesDessertFromCategory() {
+        val dessert = RecipeImporter.parseJsonLd(
+            listOf("""{"@type":"Recipe","name":"Chokoladekage","recipeCategory":"Dessert"}"""),
+            "https://example.com/kage",
+        )!!
+        assertEquals(dk.familieapp.data.KIND_DESSERT, dessert.kind)
+        val dinner = RecipeImporter.parseJsonLd(
+            listOf("""{"@type":"Recipe","name":"Kylling i karry","recipeCategory":"Aftensmad"}"""),
+            "https://example.com/karry",
+        )!!
+        assertEquals(dk.familieapp.data.KIND_DINNER, dinner.kind)
+    }
+
+    @Test
     fun returnsNullWithoutRecipe() {
         assertNull(RecipeImporter.parseJsonLd(listOf("""{"@type":"Article","name":"x"}"""), "https://example.com"))
     }

@@ -29,6 +29,8 @@ import androidx.navigation.NavController
 import dk.familieapp.data.Dates
 import dk.familieapp.data.PlannedMeal
 import dk.familieapp.data.Recipe
+import dk.familieapp.data.KIND_DESSERT
+import dk.familieapp.data.KIND_DINNER
 import dk.familieapp.data.ROLE_PARENT
 import java.time.LocalDate
 
@@ -184,13 +186,14 @@ private fun RecipeList(
     val context = LocalContext.current
     val me by vm.me.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
+    var kind by rememberSaveable { mutableStateOf(KIND_DINNER) }
     var filter by rememberSaveable { mutableIntStateOf(0) }
     var pickFor by remember { mutableStateOf<Recipe?>(null) }
 
     val todayIso = LocalDate.now().toString()
     // Hvor tit og hvornår hver opskrift har stået på madplanen.
     val cooked = meals.filter { it.recipeId.isNotBlank() && it.date <= todayIso }.groupBy { it.recipeId }
-    val matching = recipes.filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }
+    val matching = recipes.filter { it.kind == kind }.filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }
     val shown = when (filter) {
         1 -> matching.sortedBy { r -> cooked[r.id]?.maxOf { it.date } ?: "" }
         2 -> matching.filter { it.minutes in 1..30 }.sortedBy { it.minutes }
@@ -202,6 +205,13 @@ private fun RecipeList(
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        item(key = "kind") {
+            Segmented(
+                options = listOf("Aftensmad", "Desserter"),
+                selected = if (kind == KIND_DESSERT) 1 else 0,
+                onSelect = { kind = if (it == 1) KIND_DESSERT else KIND_DINNER },
+            )
+        }
         item {
             OutlinedTextField(
                 value = query,
@@ -237,6 +247,15 @@ private fun RecipeList(
                 )
             }
         }
+        if (recipes.isNotEmpty() && shown.isEmpty() && query.isBlank()) {
+            item(key = "none-of-kind") {
+                Text(
+                    if (kind == KIND_DESSERT) "Ingen desserter endnu." else "Ingen aftensretter endnu.",
+                    Modifier.padding(vertical = 12.dp),
+                    color = Muted,
+                )
+            }
+        }
         items(shown, key = { it.id }) { recipe ->
             val history = cooked[recipe.id].orEmpty()
             val meta = buildList {
@@ -261,7 +280,7 @@ private fun RecipeList(
                     Text(recipe.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                     Text(meta, fontSize = 13.sp, color = Muted)
                 }
-                if (me?.role == ROLE_PARENT) FilledTonalIconButton(onClick = { pickFor = recipe }) {
+                if (me?.role == ROLE_PARENT && recipe.kind != KIND_DESSERT) FilledTonalIconButton(onClick = { pickFor = recipe }) {
                     Icon(Icons.Filled.Add, contentDescription = "Læg ${recipe.name} på madplanen")
                 }
             }
@@ -298,6 +317,7 @@ fun PlanMealDialog(
     var recipeId by remember { mutableStateOf(existing?.recipeId.orEmpty()) }
     var cook by remember { mutableStateOf(existing?.cook.orEmpty()) }
     val suggestions = recipes
+        .filter { it.kind != KIND_DESSERT }
         .filter { title.isBlank() || it.name.contains(title, ignoreCase = true) }
         .sortedBy { it.name.lowercase() }
 
