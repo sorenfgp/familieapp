@@ -207,6 +207,7 @@ class DeviceCalendarRepo(private val context: Context) {
 
     /**
      * Opretter en aftale i [calendarId]. [start] = null betyder heldagsaftale.
+     * [endDate] gør aftalen flerdags (fx en weekendtur fredag til søndag).
      * Med [repeat] bliver det en fast aftale, der starter på første valgte ugedag fra [date].
      */
     suspend fun insertEvent(
@@ -218,38 +219,47 @@ class DeviceCalendarRepo(private val context: Context) {
         end: LocalTime?,
         description: String = "",
         repeat: Repeat? = null,
+        endDate: LocalDate? = null,
     ): Boolean = withContext(Dispatchers.IO) {
         if (!hasWritePermission()) return@withContext false
         val zone = ZoneId.systemDefault()
         val recurring = repeat != null && repeat.weekdays.isNotEmpty()
         val firstDate = if (recurring) RRules.firstDate(date, repeat!!.weekdays) else date
+        // Antal dage, aftalen strækker sig over ud over den første.
+        val extraDays = maxOf(0L, java.time.temporal.ChronoUnit.DAYS.between(date, endDate ?: date))
+
+        val begin: Long
+        val minutes: Long
+        if (start == null) {
+            begin = firstDate.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+            minutes = (extraDays + 1) * 24 * 60
+        } else {
+            begin = firstDate.atTime(start).atZone(zone).toInstant().toEpochMilli()
+            val finish = firstDate.plusDays(extraDays).atTime(end ?: start.plusHours(1))
+                .atZone(zone).toInstant().toEpochMilli()
+            val length = (finish - begin) / 60_000
+            minutes = if (length > 0) length else 60L
+        }
+
         val values = ContentValues().apply {
             put(Events.CALENDAR_ID, calendarId)
             put(Events.TITLE, title)
             put(Events.EVENT_LOCATION, location)
             put(Events.DESCRIPTION, description)
+            put(Events.DTSTART, begin)
             if (start == null) {
-                put(Events.DTSTART, firstDate.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
                 put(Events.ALL_DAY, 1)
                 put(Events.EVENT_TIMEZONE, "UTC")
             } else {
-                put(Events.DTSTART, firstDate.atTime(start).atZone(zone).toInstant().toEpochMilli())
                 put(Events.ALL_DAY, 0)
                 put(Events.EVENT_TIMEZONE, zone.id)
-            }
-            val minutes = if (start == null) {
-                24 * 60L
-            } else {
-                val length = java.time.Duration.between(start, end ?: start.plusHours(1)).toMinutes()
-                if (length > 0) length else 60L
             }
             if (recurring) {
                 // Faste aftaler har en varighed i stedet for et sluttidspunkt.
                 put(Events.DURATION, RRules.duration(minutes, start == null))
                 put(Events.RRULE, RRules.weekly(repeat!!, start == null, zone))
             } else {
-                val begin = getAsLong(Events.DTSTART)
-                put(Events.DTEND, begin + minutes * 60 * 1000L)
+                put(Events.DTEND, begin + minutes * 60_000)
             }
         }
         runCatching { context.contentResolver.insert(Events.CONTENT_URI, values) != null }.getOrDefault(false)
@@ -396,5 +406,6 @@ object RRules {
     fun firstDate(from: LocalDate, weekdays: Set<DayOfWeek>): LocalDate =
         (0L..6L).map { from.plusDays(it) }.firstOrNull { it.dayOfWeek in weekdays } ?: from
 
-    fun duration(minutes: Long, allDay: Boolean): String = if (allDay) "P1D" else "PT${minutes}M"
+    fun duration(minutes: Long, allDay: Boolean): String =
+        if (allDay) "P${maxOf(1L, minutes / (24 * 60))}D" else "PT${minutes}M"
 }

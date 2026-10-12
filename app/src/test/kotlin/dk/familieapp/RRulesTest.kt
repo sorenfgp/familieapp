@@ -44,5 +44,6 @@ class RRulesTest {
     fun durations() {
         assertEquals("PT120M", RRules.duration(120, allDay = false))
         assertEquals("P1D", RRules.duration(1440, allDay = true))
+        assertEquals("P3D", RRules.duration(3 * 1440, allDay = true))
     }
 }

@@ -352,7 +352,7 @@ fun CalendarScreen(vm: AppViewModel) {
         NewEventDialog(
             initialDate = selected,
             profiles = profiles.orEmpty(),
-            onSave = { title, location, date, startTime, endTime, who, repeat ->
+            onSave = { title, location, date, endDate, startTime, endTime, who, repeat ->
                 creating = false
                 if (calendar != null) {
                     change(
@@ -368,6 +368,7 @@ fun CalendarScreen(vm: AppViewModel) {
                             end = endTime,
                             description = EventWho.apply("", who),
                             repeat = repeat,
+                            endDate = endDate,
                         )
                     }
                 }
@@ -695,6 +696,7 @@ private fun NewEventDialog(
         title: String,
         location: String,
         date: LocalDate,
+        endDate: LocalDate,
         start: LocalTime?,
         end: LocalTime?,
         who: List<String>,
@@ -706,6 +708,7 @@ private fun NewEventDialog(
     var title by remember { mutableStateOf("") }
     var location by remember { mutableStateOf("") }
     var date by remember { mutableStateOf(initialDate) }
+    var endDate by remember { mutableStateOf(initialDate) }
     var allDay by remember { mutableStateOf(false) }
     var start by remember { mutableStateOf(LocalTime.of(17, 0)) }
     var end by remember { mutableStateOf(LocalTime.of(18, 0)) }
@@ -734,13 +737,24 @@ private fun NewEventDialog(
                 OutlinedButton(
                     onClick = {
                         pickDate(context, date) {
+                            // Slutdatoen følger med, så aftalen beholder sin længde.
+                            val extra = java.time.temporal.ChronoUnit.DAYS.between(date, endDate)
                             date = it
+                            endDate = it.plusDays(maxOf(0L, extra))
                             if (repeatEvery == 0) weekdays = setOf(it.dayOfWeek)
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text((if (repeatEvery > 0) "Fra " else "") + Dates.long(date))
+                    Text("Starter " + Dates.long(date))
+                }
+                OutlinedButton(
+                    onClick = {
+                        pickDate(context, endDate) { endDate = if (it.isBefore(date)) date else it }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (endDate == date) "Slutter samme dag" else "Slutter " + Dates.long(endDate))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Hele dagen", Modifier.weight(1f))
@@ -828,6 +842,7 @@ private fun NewEventDialog(
                         title.trim(),
                         location.trim(),
                         date,
+                        endDate,
                         if (allDay) null else start,
                         if (allDay) null else end,
                         who,
