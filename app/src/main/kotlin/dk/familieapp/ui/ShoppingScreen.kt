@@ -1,6 +1,11 @@
 package dk.familieapp.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -80,14 +85,22 @@ private fun WeekList(
     canEdit: Boolean,
     modifier: Modifier,
 ) {
-    var text by rememberSaveable { mutableStateOf("") }
+    var name by rememberSaveable { mutableStateOf("") }
+    var amount by rememberSaveable { mutableStateOf("") }
+    var basketOpen by rememberSaveable { mutableStateOf(false) }
+    var confirmClear by remember { mutableStateOf(false) }
 
     fun add() {
-        if (text.isBlank()) return
-        // "2 l mælk" bliver til vare "Mælk" og mængde "2 l".
-        val parsed = RecipeImporter.splitIngredient(text)
-        vm.addShoppingItem(parsed.name, parsed.amount)
-        text = ""
+        if (name.isBlank()) return
+        if (amount.isBlank()) {
+            // "2 l mælk" i navnefeltet bliver også til vare "Mælk" og mængde "2 l".
+            val parsed = RecipeImporter.splitIngredient(name)
+            vm.addShoppingItem(parsed.name, parsed.amount)
+        } else {
+            vm.addShoppingItem(name.trim().replaceFirstChar { it.uppercase() }, amount.trim())
+        }
+        name = ""
+        amount = ""
     }
 
     val groups = Categories.order.mapNotNull { category ->
@@ -105,25 +118,41 @@ private fun WeekList(
     ) {
         if (canEdit) {
             item(key = "add") {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Tilføj vare, fx 2 l mælk") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(26.dp),
-                    trailingIcon = {
-                        IconButton(onClick = { add() }) {
-                            Icon(Icons.Filled.Add, contentDescription = "Tilføj vare")
-                        }
-                    },
-                    keyboardOptions = SentenceCaps.copy(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { add() }),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = Color.White,
-                        unfocusedContainerColor = Color.White,
-                    ),
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("Tilføj vare") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(16.dp),
+                        keyboardOptions = SentenceCaps.copy(imeAction = ImeAction.Next),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                        ),
+                    )
+                    OutlinedTextField(
+                        value = amount,
+                        onValueChange = { amount = it },
+                        modifier = Modifier.width(96.dp),
+                        placeholder = { Text("Mængde") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(16.dp),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { add() }),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                        ),
+                    )
+                    FilledIconButton(onClick = { add() }, enabled = name.isNotBlank()) {
+                        Icon(Icons.Filled.Add, contentDescription = "Tilføj vare")
+                    }
+                }
             }
         }
         if (open.isEmpty() && done.isEmpty()) {
@@ -140,42 +169,110 @@ private fun WeekList(
             item(key = "card-$category") {
                 WhiteCard {
                     list.forEach { entry ->
-                        ItemRow(entry, profiles, canEdit, onToggle = { vm.toggleShoppingItem(entry) })
+                        ItemRow(
+                            item = entry,
+                            profiles = profiles,
+                            canEdit = canEdit,
+                            onToggle = { vm.toggleShoppingItem(entry) },
+                            onMove = { vm.moveToCategory(entry, it) },
+                        )
                     }
                 }
             }
         }
         if (done.isNotEmpty()) {
             item(key = "done-label") {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SectionLabel("I kurven", Modifier.weight(1f))
-                    if (canEdit) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { basketOpen = !basketOpen }
+                        .heightIn(min = 48.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        if (basketOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        contentDescription = if (basketOpen) "Fold sammen" else "Fold ud",
+                        tint = Muted,
+                    )
+                    Text(
+                        "I kurven (${done.size})",
+                        Modifier.weight(1f),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Muted,
+                    )
+                    if (canEdit && basketOpen) {
                         TextButton(onClick = { vm.clearCheckedItems() }) {
                             Text("Ryd købte", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             }
-            item(key = "done") {
-                Column {
-                    done.forEach { entry ->
-                        ItemRow(entry, profiles, canEdit, onToggle = { vm.toggleShoppingItem(entry) })
+            if (basketOpen) {
+                item(key = "done") {
+                    Column {
+                        done.forEach { entry ->
+                            ItemRow(
+                                item = entry,
+                                profiles = profiles,
+                                canEdit = canEdit,
+                                onToggle = { vm.toggleShoppingItem(entry) },
+                                onMove = null,
+                            )
+                        }
                     }
                 }
             }
         }
+        if (canEdit && (open.isNotEmpty() || done.isNotEmpty())) {
+            item(key = "clear-all") {
+                TextButton(
+                    onClick = { confirmClear = true },
+                    modifier = Modifier.padding(top = 8.dp),
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) {
+                    Text("Ryd hele listen", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("Ryd hele listen?") },
+            text = { Text("Alle ${open.size + done.size} varer fjernes, også dem i kurven. De faste varer bliver liggende.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmClear = false
+                    vm.clearShoppingList()
+                }) { Text("Ryd") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClear = false }) { Text("Annullér") }
+            },
+        )
     }
 }
 
 @Composable
-private fun ItemRow(item: ShoppingItem, profiles: List<Profile>, canEdit: Boolean, onToggle: () -> Unit) {
+private fun ItemRow(
+    item: ShoppingItem,
+    profiles: List<Profile>,
+    canEdit: Boolean,
+    onToggle: () -> Unit,
+    onMove: ((String) -> Unit)?,
+) {
     val sources = ShoppingMerge.shortSources(item.allSources())
+    var menuOpen by remember { mutableStateOf(false) }
     Row(
         Modifier
             .fillMaxWidth()
             .clickable(enabled = canEdit, onClick = onToggle)
             .heightIn(min = 48.dp)
-            .padding(end = 16.dp),
+            .padding(end = if (canEdit && onMove != null) 0.dp else 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -201,6 +298,36 @@ private fun ItemRow(item: ShoppingItem, profiles: List<Profile>, canEdit: Boolea
         }
         if (item.checked && item.checkedBy.isNotBlank()) {
             Text(profiles.nameOf(item.checkedBy), fontSize = 13.sp, color = Muted)
+        }
+        if (canEdit && onMove != null) {
+            // Håndtag ude i siden: vælg en anden afdeling. Valget huskes for varen.
+            Box {
+                IconButton(onClick = { menuOpen = true }) {
+                    Icon(
+                        Icons.Filled.SwapVert,
+                        contentDescription = "Flyt ${item.name} til en anden gruppe",
+                        tint = Muted,
+                    )
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    Text(
+                        "Flyt til",
+                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Muted,
+                    )
+                    Categories.order.filter { it != item.category }.forEach { category ->
+                        DropdownMenuItem(
+                            text = { Text(category) },
+                            onClick = {
+                                menuOpen = false
+                                onMove(category)
+                            },
+                        )
+                    }
+                }
+            }
         }
     }
 }

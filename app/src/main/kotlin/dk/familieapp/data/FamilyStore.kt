@@ -23,6 +23,7 @@ object Cols {
     val choreTemplates = Col("choreTemplates", ChoreTemplate::class.java, ChoreTemplate.serializer(), { it.id }, { t, id -> t.copy(id = id) })
     val chores = Col("chores", ChoreEntry::class.java, ChoreEntry.serializer(), { it.id }, { c, id -> c.copy(id = id) })
     val calendarEvents = Col("calendarEvents", MirroredEvent::class.java, MirroredEvent.serializer(), { it.id }, { e, id -> e.copy(id = id) })
+    val categoryOverrides = Col("categoryOverrides", CategoryOverride::class.java, CategoryOverride.serializer(), { it.id }, { o, id -> o.copy(id = id) })
     val calendarSync = Col("calendarSync", CalendarSyncInfo::class.java, CalendarSyncInfo.serializer(), { it.id }, { s, id -> s.copy(id = id) })
 }
 

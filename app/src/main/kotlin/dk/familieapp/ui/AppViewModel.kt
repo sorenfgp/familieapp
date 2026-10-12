@@ -11,6 +11,7 @@ import androidx.lifecycle.viewModelScope
 import dk.familieapp.data.Addition
 import dk.familieapp.data.CalendarMirror
 import dk.familieapp.data.CalendarSyncInfo
+import dk.familieapp.data.CategoryOverride
 import dk.familieapp.data.MirroredEvent
 import kotlinx.coroutines.launch
 import dk.familieapp.data.CHORE_APPROVED
@@ -228,6 +229,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Indkøbsliste (kun forældre må rette) ----
 
+    /** Varer, som familien har flyttet til en anden afdeling. Valget huskes til næste gang. */
+    val categoryOverrides: StateFlow<List<CategoryOverride>> = observe(Cols.categoryOverrides)
+
+    private fun categoryFor(name: String): String =
+        categoryOverrides.value.firstOrNull { ShoppingMerge.sameName(it.name, name) }?.category
+            ?: Categories.of(name)
+
+    /** Flytter varen til en anden afdeling og husker valget for varen. */
+    fun moveToCategory(item: ShoppingItem, category: String) {
+        if (!isParent) return
+        put(Cols.shopping, item.copy(category = category))
+        val id = item.name.trim().lowercase().replace('/', '_').ifBlank { "_" }
+        put(Cols.categoryOverrides, CategoryOverride(id = id, name = item.name.trim(), category = category))
+    }
+
+    /** Tømmer hele indkøbslisten, også det der er i kurven. */
+    fun clearShoppingList() {
+        if (!isParent) return
+        _store.value?.delete(Cols.shopping, shopping.value.map { it.id })
+    }
+
     /** Lægger varer på listen og slår dem sammen med ens varer, der allerede står der. */
     private fun addToShopping(additions: List<Addition>): Int {
         if (!isParent) return 0
@@ -237,7 +259,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 id = newId(),
                 name = addition.name,
                 amount = addition.amount,
-                category = Categories.of(addition.name),
+                category = categoryFor(addition.name),
                 sources = listOf(addition.source).filter { it.isNotBlank() },
                 createdAt = now() + order++,
             )

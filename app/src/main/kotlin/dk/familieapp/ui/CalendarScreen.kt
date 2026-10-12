@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalLayoutApi::class)
+
 package dk.familieapp.ui
 
 import android.Manifest
@@ -39,6 +41,8 @@ import dk.familieapp.data.CalendarMirror
 import dk.familieapp.data.Dates
 import dk.familieapp.data.DeviceCalendar
 import dk.familieapp.data.DeviceCalendarRepo
+import dk.familieapp.data.EventWho
+import dk.familieapp.data.Profile
 import dk.familieapp.data.ROLE_PARENT
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -57,6 +61,7 @@ fun CalendarScreen(vm: AppViewModel) {
     val me by vm.me.collectAsStateWithLifecycle()
     val mirror by vm.calendarMirror.collectAsStateWithLifecycle()
     val syncInfo by vm.calendarSync.collectAsStateWithLifecycle()
+    val profiles by vm.profiles.collectAsStateWithLifecycle()
     val isParent = me?.role == ROLE_PARENT
     val familyKey = settings?.calendarKey.orEmpty()
     val familyName = settings?.calendarName.orEmpty()
@@ -80,6 +85,7 @@ fun CalendarScreen(vm: AppViewModel) {
     var refresh by remember { mutableIntStateOf(0) }
     var choosing by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf(false) }
+    var openEvent by remember { mutableStateOf<CalendarEvent?>(null) }
 
     // Hent igen, når man kommer tilbage fra kalenderappen.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
@@ -228,7 +234,9 @@ fun CalendarScreen(vm: AppViewModel) {
                         detail = listOf(CalendarMath.timeLabel(event, selected, zone), event.location)
                             .filter { it.isNotBlank() }
                             .joinToString(" · "),
-                        onClick = if (local != null) ({ show(event) }) else null,
+                        onClick = { openEvent = event },
+                        who = EventWho.parse(event.description),
+                        profiles = profiles.orEmpty(),
                     )
                 }
                 if (meal != null) {
@@ -279,11 +287,12 @@ fun CalendarScreen(vm: AppViewModel) {
         val calendar = familyCalendar
         NewEventDialog(
             initialDate = selected,
-            onSave = { title, location, date, startTime, endTime ->
+            profiles = profiles.orEmpty(),
+            onSave = { title, location, date, startTime, endTime, who ->
                 creating = false
                 if (calendar != null) {
                     scope.launch {
-                        val ok = repo.insertEvent(calendar.id, title, location, date, startTime, endTime)
+                        val ok = repo.insertEvent(calendar.id, title, location, date, startTime, endTime, EventWho.apply("", who))
                         context.toast(if (ok) "Aftalen er gemt i $familyName" else "Aftalen kunne ikke gemmes")
                         refresh += 1
                         vm.syncCalendar(force = true)
@@ -291,6 +300,37 @@ fun CalendarScreen(vm: AppViewModel) {
                 }
             },
             onDismiss = { creating = false },
+        )
+    }
+
+    openEvent?.let { event ->
+        val canEdit = local?.canWrite == true
+        EventDialog(
+            event = event,
+            day = selected,
+            zone = zone,
+            profiles = profiles.orEmpty(),
+            canEdit = canEdit,
+            canOpen = local != null,
+            onSaveWho = { who ->
+                openEvent = null
+                if (!repo.hasWritePermission()) {
+                    permissionLauncher.launch(calendarPermissions)
+                    context.toast("Giv appen adgang til kalenderen, og prøv igen")
+                } else {
+                    scope.launch {
+                        val ok = repo.updateDescription(event.eventId, EventWho.apply(event.description, who))
+                        context.toast(if (ok) "Gemt i $familyName" else "Aftalen kunne ikke ændres")
+                        refresh += 1
+                        vm.syncCalendar(force = true)
+                    }
+                }
+            },
+            onOpen = {
+                openEvent = null
+                show(event)
+            },
+            onDismiss = { openEvent = null },
         )
     }
 }
@@ -379,7 +419,14 @@ private fun InfoCard(title: String, text: String, button: String?, onClick: () -
 }
 
 @Composable
-private fun AgendaRow(color: Color, title: String, detail: String, onClick: (() -> Unit)?) {
+private fun AgendaRow(
+    color: Color,
+    title: String,
+    detail: String,
+    onClick: (() -> Unit)?,
+    who: List<String>? = null,
+    profiles: List<Profile> = emptyList(),
+) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -403,6 +450,7 @@ private fun AgendaRow(color: Color, title: String, detail: String, onClick: (() 
                 Text(detail, fontSize = 14.sp, color = Muted)
             }
         }
+        WhoBadges(who, profiles, Modifier.align(Alignment.CenterVertically))
     }
 }
 
@@ -466,7 +514,8 @@ private fun CalendarChooser(
 @Composable
 private fun NewEventDialog(
     initialDate: LocalDate,
-    onSave: (title: String, location: String, date: LocalDate, start: LocalTime?, end: LocalTime?) -> Unit,
+    profiles: List<Profile>,
+    onSave: (title: String, location: String, date: LocalDate, start: LocalTime?, end: LocalTime?, who: List<String>) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -476,6 +525,7 @@ private fun NewEventDialog(
     var allDay by remember { mutableStateOf(false) }
     var start by remember { mutableStateOf(LocalTime.of(17, 0)) }
     var end by remember { mutableStateOf(LocalTime.of(18, 0)) }
+    var who by remember { mutableStateOf(listOf(EventWho.ALL)) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -548,18 +598,126 @@ private fun NewEventDialog(
                     keyboardOptions = SentenceCaps,
                     singleLine = true,
                 )
+                Text("Hvem", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Muted)
+                WhoPicker(profiles, who) { who = it }
             }
         },
         confirmButton = {
             TextButton(
                 onClick = {
-                    onSave(title.trim(), location.trim(), date, if (allDay) null else start, if (allDay) null else end)
+                    onSave(title.trim(), location.trim(), date, if (allDay) null else start, if (allDay) null else end, who)
                 },
                 enabled = title.isNotBlank(),
             ) { Text("Gem") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Annullér") }
+        },
+    )
+}
+
+/** Vælg hvem en aftale gælder for: Alle eller enkelte familiemedlemmer. */
+@Composable
+private fun WhoPicker(profiles: List<Profile>, selected: List<String>, onChange: (List<String>) -> Unit) {
+    val isAll = EventWho.isAll(selected)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FilterChip(
+            selected = isAll,
+            onClick = { onChange(if (isAll) emptyList() else listOf(EventWho.ALL)) },
+            label = { Text(EventWho.ALL) },
+        )
+        profiles.sortedBy { it.name.lowercase() }.forEach { profile ->
+            val chosen = !isAll && selected.any { it.equals(profile.name, ignoreCase = true) }
+            FilterChip(
+                selected = chosen,
+                onClick = {
+                    val people = selected.filterNot { EventWho.isAll(listOf(it)) }
+                    onChange(
+                        if (chosen) people.filterNot { it.equals(profile.name, ignoreCase = true) }
+                        else people + profile.name
+                    )
+                },
+                label = { Text(profile.name) },
+            )
+        }
+    }
+}
+
+/** "Alle" eller små avatarer for dem, aftalen gælder for. */
+@Composable
+private fun WhoBadges(who: List<String>?, profiles: List<Profile>, modifier: Modifier = Modifier) {
+    if (who.isNullOrEmpty()) return
+    if (EventWho.isAll(who)) {
+        Box(modifier) { Pill(EventWho.ALL) }
+        return
+    }
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        who.take(4).forEach { name ->
+            val profile = profiles.firstOrNull { it.name.equals(name, ignoreCase = true) }
+            if (profile != null) Avatar(profile, 26.dp) else Pill(name)
+        }
+    }
+}
+
+@Composable
+private fun EventDialog(
+    event: CalendarEvent,
+    day: LocalDate,
+    zone: ZoneId,
+    profiles: List<Profile>,
+    canEdit: Boolean,
+    canOpen: Boolean,
+    onSaveWho: (List<String>) -> Unit,
+    onOpen: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val initial = remember(event) { EventWho.parse(event.description).orEmpty() }
+    var who by remember(event) { mutableStateOf(initial) }
+    val notes = EventWho.strip(event.description)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(event.title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    listOf(
+                        Dates.long(day).replaceFirstChar { it.uppercase() },
+                        CalendarMath.timeLabel(event, day, zone),
+                        event.location,
+                    ).filter { it.isNotBlank() }.joinToString(" · "),
+                    fontSize = 14.sp,
+                    color = Muted,
+                )
+                if (notes.isNotBlank()) Text(notes, fontSize = 15.sp)
+                Text("Hvem", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Muted)
+                if (canEdit) {
+                    WhoPicker(profiles, who) { who = it }
+                } else if (initial.isEmpty()) {
+                    Text("Ikke angivet", fontSize = 15.sp, color = Muted)
+                } else {
+                    WhoBadges(initial, profiles)
+                }
+                if (canEdit) {
+                    Text(
+                        "Gentages aftalen, gælder valget hele serien.",
+                        fontSize = 12.sp,
+                        color = Muted,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            if (canEdit && who != initial) {
+                TextButton(onClick = { onSaveWho(who) }) { Text("Gem") }
+            } else {
+                TextButton(onClick = onDismiss) { Text("Luk") }
+            }
+        },
+        dismissButton = {
+            if (canOpen) {
+                TextButton(onClick = onOpen) { Text("Åbn i Google Kalender") }
+            }
         },
     )
 }

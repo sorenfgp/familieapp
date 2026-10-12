@@ -135,6 +135,15 @@ data class MirroredEvent(
     val allDay: Boolean = false,
     val location: String = "",
     val color: Int = 0,
+    val description: String = "",
+)
+
+/** Brugerens valg af afdeling for en vare, fx "Kartoffelmel" → "Kolonial". id er varens navn med små bogstaver. */
+@Serializable
+data class CategoryOverride(
+    val id: String = "",
+    val name: String = "",
+    val category: String = "",
 )
 
 /** Hvornår kopien af familiekalenderen sidst blev opdateret. Ét dokument med id "main". */

@@ -2,14 +2,14 @@
 
 Android-app til familiens madplan, opskrifter og indkøb. Skrevet i Kotlin med Jetpack Compose.
 
-## Hvad appen kan (version 0.4)
+## Hvad appen kan (version 0.5)
 
 - **Profiler:** hver telefon eller tablet vælger en profil. Forældreprofiler kræver forælder-PIN. Avataren øverst fører til familie og indstillinger.
 - **Madplan:** en ret pr. dag, uge for uge fra søndag til lørdag. Vælg fra opskrifterne eller skriv en ret selv.
 - **Opskrifter:** kartotek med ingredienser og fremgangsmåde. Importér fra et link, del en side fra browseren til appen, eller skriv selv.
-- **Indkøbsliste:** grupperet efter butiksafdeling. Ens varer lægges sammen til én linje med summeret mængde og forkortede opskriftsnavne. Kun forældre kan rette listen.
+- **Indkøbsliste:** grupperet efter butiksafdeling. En vare kan flyttes til en anden afdeling, og valget huskes. Ens varer lægges sammen til én linje med summeret mængde og forkortede opskriftsnavne. Kun forældre kan rette listen.
 - **Faste varer:** en redigerbar liste (morgenmad, madpakker), som lægges på ugens liste med ét tryk.
-- **Kalender:** forældrene vælger én fælles Google-kalender. Appen viser dens aftaler sammen med aftensmaden og opretter nye aftaler direkte i den. Børnene behøver ingen Google-konto.
+- **Kalender:** forældrene vælger én fælles Google-kalender. Appen viser dens aftaler sammen med aftensmaden og opretter nye aftaler direkte i den. Børnene behøver ingen Google-konto. Hver aftale kan angive, hvem den gælder for (gemt som en "Hvem:"-linje i aftalens beskrivelse).
 - **Pligter:** faste pligter (barn og ugedage) og ad hoc-pligter med belønning. Barnet melder en pligt udført, en forælder bekræfter, og alle kan se hvem der gjorde hvad.
 
 ### Sådan virker kalenderen

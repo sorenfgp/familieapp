@@ -42,6 +42,7 @@ data class CalendarEvent(
     val color: Int,
     val firstDay: LocalDate,
     val lastDay: LocalDate,
+    val description: String = "",
 ) {
     fun isOn(day: LocalDate): Boolean = !day.isBefore(firstDay) && !day.isAfter(lastDay)
 }
@@ -162,6 +163,7 @@ class DeviceCalendarRepo(private val context: Context) {
                             Instances.EVENT_LOCATION,
                             Instances.CALENDAR_ID,
                             Instances.DISPLAY_COLOR,
+                            Instances.DESCRIPTION,
                         ),
                         null,
                         null,
@@ -185,6 +187,7 @@ class DeviceCalendarRepo(private val context: Context) {
                                     color = cursor.getInt(7),
                                     firstDay = first,
                                     lastDay = last,
+                                    description = cursor.getString(8) ?: "",
                                 )
                             }
                         }
@@ -202,12 +205,14 @@ class DeviceCalendarRepo(private val context: Context) {
         date: LocalDate,
         start: LocalTime?,
         end: LocalTime?,
+        description: String = "",
     ): Boolean = withContext(Dispatchers.IO) {
         if (!hasWritePermission()) return@withContext false
         val values = ContentValues().apply {
             put(Events.CALENDAR_ID, calendarId)
             put(Events.TITLE, title)
             put(Events.EVENT_LOCATION, location)
+            put(Events.DESCRIPTION, description)
             if (start == null) {
                 val begin = date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
                 put(Events.DTSTART, begin)
@@ -226,5 +231,14 @@ class DeviceCalendarRepo(private val context: Context) {
             }
         }
         runCatching { context.contentResolver.insert(Events.CONTENT_URI, values) != null }.getOrDefault(false)
+    }
+
+    /** Retter beskrivelsen (fx "Hvem: Ida"). For en gentagen aftale gælder det hele serien. */
+    suspend fun updateDescription(eventId: Long, description: String): Boolean = withContext(Dispatchers.IO) {
+        if (!hasWritePermission()) return@withContext false
+        val values = ContentValues().apply { put(Events.DESCRIPTION, description) }
+        runCatching {
+            context.contentResolver.update(ContentUris.withAppendedId(Events.CONTENT_URI, eventId), values, null, null) > 0
+        }.getOrDefault(false)
     }
 }
