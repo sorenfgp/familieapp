@@ -21,6 +21,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -269,6 +273,14 @@ private fun RecipeForm(
         mutableStateListOf<String>().apply { addAll(initial.steps) }
     }
     var confirmDelete by remember { mutableStateOf(false) }
+    // Rækken, hvis felt skal have fokus efter næste tegning (-1 = ingen).
+    var focusIngredient by remember { mutableIntStateOf(-1) }
+    var focusStep by remember { mutableIntStateOf(-1) }
+
+    fun addIngredient() {
+        ingredients.add(Ingredient())
+        focusIngredient = ingredients.lastIndex
+    }
 
     val heading = when {
         !isNew -> "Ret opskrift"
@@ -341,51 +353,87 @@ private fun RecipeForm(
             )
             SectionLabel("Ingredienser")
             ingredients.forEachIndexed { index, ingredient ->
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    OutlinedTextField(
-                        value = ingredient.name,
-                        onValueChange = { ingredients[index] = ingredient.copy(name = it) },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("Vare") },
-                        keyboardOptions = SentenceCaps,
-                        singleLine = true,
-                    )
-                    OutlinedTextField(
-                        value = ingredient.amount,
-                        onValueChange = { ingredients[index] = ingredient.copy(amount = it) },
-                        modifier = Modifier.width(108.dp),
-                        placeholder = { Text("Mængde") },
-                        singleLine = true,
-                    )
-                    IconButton(onClick = { ingredients.removeAt(index) }) {
-                        Icon(Icons.Filled.Close, contentDescription = "Fjern ingrediens ${index + 1}")
+                key(index) {
+                    val nameFocus = remember { FocusRequester() }
+                    val amountFocus = remember { FocusRequester() }
+                    // Nyt felt: hop direkte ind i det, så man ikke skal trykke to gange.
+                    LaunchedEffect(focusIngredient) {
+                        if (focusIngredient == index) {
+                            nameFocus.requestFocus()
+                            focusIngredient = -1
+                        }
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        OutlinedTextField(
+                            value = ingredient.name,
+                            onValueChange = { ingredients[index] = ingredient.copy(name = it) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .focusRequester(nameFocus),
+                            placeholder = { Text("Vare") },
+                            // Enter går videre til mængden.
+                            keyboardOptions = SentenceCaps.copy(imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = { amountFocus.requestFocus() }),
+                            singleLine = true,
+                        )
+                        OutlinedTextField(
+                            value = ingredient.amount,
+                            onValueChange = { ingredients[index] = ingredient.copy(amount = it) },
+                            modifier = Modifier
+                                .width(108.dp)
+                                .focusRequester(amountFocus),
+                            placeholder = { Text("Mængde") },
+                            // Enter i sidste række tilføjer en ny ingrediens, ellers går den til næste række.
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = {
+                                if (index == ingredients.lastIndex) addIngredient() else focusIngredient = index + 1
+                            }),
+                            singleLine = true,
+                        )
+                        IconButton(onClick = { ingredients.removeAt(index) }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Fjern ingrediens ${index + 1}")
+                        }
                     }
                 }
             }
-            TextButton(onClick = { ingredients.add(Ingredient()) }) {
+            TextButton(onClick = { addIngredient() }) {
                 Text("+ Tilføj ingrediens", fontWeight = FontWeight.Bold)
             }
 
             SectionLabel("Fremgangsmåde")
             steps.forEachIndexed { index, step ->
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.padding(top = 14.dp)) { StepNumber(index + 1) }
-                    OutlinedTextField(
-                        value = step,
-                        onValueChange = { steps[index] = it },
-                        modifier = Modifier.weight(1f),
-                        minLines = 2,
-                        keyboardOptions = SentenceCaps,
-                    )
-                    IconButton(onClick = { steps.removeAt(index) }) {
-                        Icon(Icons.Filled.Close, contentDescription = "Fjern trin ${index + 1}")
+                key(index) {
+                    val stepFocus = remember { FocusRequester() }
+                    LaunchedEffect(focusStep) {
+                        if (focusStep == index) {
+                            stepFocus.requestFocus()
+                            focusStep = -1
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.padding(top = 14.dp)) { StepNumber(index + 1) }
+                        OutlinedTextField(
+                            value = step,
+                            onValueChange = { steps[index] = it },
+                            modifier = Modifier
+                                .weight(1f)
+                                .focusRequester(stepFocus),
+                            minLines = 2,
+                            keyboardOptions = SentenceCaps,
+                        )
+                        IconButton(onClick = { steps.removeAt(index) }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Fjern trin ${index + 1}")
+                        }
                     }
                 }
             }
-            TextButton(onClick = { steps.add("") }) {
+            TextButton(onClick = {
+                steps.add("")
+                focusStep = steps.lastIndex
+            }) {
                 Text("+ Tilføj trin", fontWeight = FontWeight.Bold)
             }
 
