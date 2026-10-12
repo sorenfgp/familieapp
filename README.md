@@ -2,7 +2,7 @@
 
 Android-app til familiens madplan, opskrifter og indkøb. Skrevet i Kotlin med Jetpack Compose.
 
-## Hvad appen kan (version 0.3)
+## Hvad appen kan (version 0.4)
 
 - **Profiler:** hver telefon eller tablet vælger en profil. Forældreprofiler kræver forælder-PIN. Avataren øverst fører til familie og indstillinger.
 - **Madplan:** en ret pr. dag, uge for uge fra søndag til lørdag. Vælg fra opskrifterne eller skriv en ret selv.
