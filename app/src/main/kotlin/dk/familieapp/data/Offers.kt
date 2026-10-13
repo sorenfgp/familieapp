@@ -50,6 +50,7 @@ object Offers {
         "grønne", "gul", "gule", "hvid", "hvide", "fin", "finthakket", "revet", "revne", "skiver", "skåret",
         "økologisk", "økologiske", "dåse", "dåser", "pakke", "pakker", "tørret", "tørrede", "kogt", "kogte",
         "frosne", "frossen", "eller", "til", "med", "uden", "fra", "evt", "ca", "efter", "smag", "servering",
+        "stk", "gram", "liter", "spsk", "tsk", "knsp", "bundt", "pose", "glas",
     )
 
     /** Det ord, der søges efter for en ingrediens: det længste meningsbærende ord ("Hakket oksekød" → "oksekød"). */
