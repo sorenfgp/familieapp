@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import dk.familieapp.data.HomeCards
 import dk.familieapp.data.Profile
 import dk.familieapp.data.ROLE_CHILD
 import dk.familieapp.data.ROLE_PARENT
@@ -461,6 +462,53 @@ fun FamilyScreen(vm: AppViewModel, nav: NavController) {
                 SectionLabel("Forælder-PIN")
                 OutlinedButton(onClick = { changingPin = true }) {
                     Text("Skift forælder-PIN")
+                }
+            }
+
+            SectionLabel("Forsiden for ${me?.name.orEmpty()}")
+            WhiteCard {
+                val shown = me?.homeCards ?: HomeCards.default
+                HomeCards.all.forEach { (card, label) ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { vm.setHomeCard(card, card !in shown) }
+                            .heightIn(min = 52.dp)
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(label, Modifier.weight(1f), fontSize = 16.sp)
+                        Switch(checked = card in shown, onCheckedChange = { vm.setHomeCard(card, it) })
+                    }
+                }
+            }
+            Text("Valget gælder kun din profil. De andre vælger selv.", fontSize = 13.sp, color = Muted)
+
+            if (isParent) {
+                SectionLabel("S-tog (Rejseplanen)")
+                var rejseplanenKey by remember(settings?.rejseplanenKey) {
+                    mutableStateOf(settings?.rejseplanenKey.orEmpty())
+                }
+                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), color = Color.White) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "Kortet med linje A kræver en gratis nøgle til Rejseplanens API. Ansøg som privat " +
+                                "bruger på labs.rejseplanen.dk, og indsæt nøglen her. Den gælder for hele familien.",
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                            color = Muted,
+                        )
+                        OutlinedTextField(
+                            value = rejseplanenKey,
+                            onValueChange = { rejseplanenKey = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Nøgle (accessId)") },
+                            singleLine = true,
+                        )
+                        if (rejseplanenKey.trim() != settings?.rejseplanenKey.orEmpty()) {
+                            Button(onClick = { vm.setRejseplanenKey(rejseplanenKey) }) { Text("Gem nøgle") }
+                        }
+                    }
                 }
             }
 

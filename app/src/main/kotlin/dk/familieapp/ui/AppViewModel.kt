@@ -9,6 +9,10 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dk.familieapp.data.Addition
+import dk.familieapp.data.Rejseplanen
+import dk.familieapp.data.TrainStatus
+import dk.familieapp.data.Weather
+import dk.familieapp.data.WeatherService
 import dk.familieapp.data.CalendarMirror
 import dk.familieapp.data.CalendarSyncInfo
 import dk.familieapp.data.CategoryOverride
@@ -201,6 +205,56 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun removeMeal(meal: PlannedMeal) {
         if (!isParent) return
         _store.value?.delete(Cols.meals, listOf(meal.id.ifBlank { meal.date }))
+    }
+
+    // ---- Kort på forsiden: vejr og S-tog ----
+
+    var weather by mutableStateOf<Result<Weather>?>(null)
+        private set
+    private var weatherAt = 0L
+
+    /** Henter vejret højst hvert 15. minut. */
+    fun loadWeather() {
+        if (now() - weatherAt < 15 * 60 * 1000L && weather?.isSuccess == true) return
+        weatherAt = now()
+        viewModelScope.launch { weather = runCatching { WeatherService.hillerod() } }
+    }
+
+    var train by mutableStateOf<Result<TrainStatus>?>(null)
+        private set
+    private var trainAt = 0L
+
+    /** Henter S-togets afgange højst hvert 2. minut (Rejseplanens grænse er 50.000 kald om måneden). */
+    fun loadTrain(force: Boolean = false) {
+        val key = settings.value?.rejseplanenKey.orEmpty()
+        if (key.isBlank()) {
+            train = null
+            return
+        }
+        if (!force && now() - trainAt < 2 * 60 * 1000L && train?.isSuccess == true) return
+        trainAt = now()
+        viewModelScope.launch {
+            train = runCatching {
+                // Stationernes id'er ændrer sig ikke, så de huskes på telefonen.
+                suspend fun id(name: String): String =
+                    prefs.getString("stop_$name", null) ?: Rejseplanen.stopId(key, name).also {
+                        prefs.edit().putString("stop_$name", it).apply()
+                    }
+                Rejseplanen.status(key, id(Rejseplanen.FAVRHOLM), id(Rejseplanen.NORREPORT))
+            }
+        }
+    }
+
+    fun setRejseplanenKey(key: String) {
+        saveSettings { it.copy(rejseplanenKey = key.trim()) }
+        trainAt = 0
+    }
+
+    /** Slår et kort på forsiden til eller fra for den valgte profil. */
+    fun setHomeCard(card: String, shown: Boolean) {
+        val profile = me.value ?: return
+        val cards = if (shown) (profile.homeCards + card).distinct() else profile.homeCards - card
+        put(Cols.profiles, profile.copy(homeCards = cards))
     }
 
     // ---- Familiekalender: kopi til enheder uden adgang til Google-kalenderen ----

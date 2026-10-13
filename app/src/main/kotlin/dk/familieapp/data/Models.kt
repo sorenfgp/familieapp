@@ -86,6 +86,8 @@ data class Profile(
     val name: String = "",
     val role: String = ROLE_CHILD,
     val color: Int = 0,
+    /** Kortene, profilen vil se på forsiden (se [HomeCards]). */
+    val homeCards: List<String> = HomeCards.default,
 )
 
 /** Fælles indstillinger for familien. Gemmes som ét dokument med id "main". */
@@ -98,6 +100,8 @@ data class FamilySettings(
     val calendarName: String = "",
     /** "text" i dag. Senere evt. "points" eller "money". */
     val rewardMode: String = "text",
+    /** Nøgle til Rejseplanens API, så forsiden kan vise S-togets afgange. */
+    val rejseplanenKey: String = "",
 )
 
 /** En fast pligt: samme barn på faste ugedage (1 = mandag … 7 = søndag). */

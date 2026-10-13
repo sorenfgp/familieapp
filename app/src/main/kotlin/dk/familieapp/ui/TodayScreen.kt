@@ -25,6 +25,7 @@ import dk.familieapp.data.CalendarMirror
 import dk.familieapp.data.ChorePlan
 import dk.familieapp.data.Dates
 import dk.familieapp.data.DeviceCalendarRepo
+import dk.familieapp.data.HomeCards
 import dk.familieapp.data.ROLE_PARENT
 import dk.familieapp.data.onDate
 import java.time.LocalDate
@@ -40,6 +41,7 @@ fun TodayScreen(vm: AppViewModel, nav: NavController) {
     val templates by vm.choreTemplates.collectAsStateWithLifecycle()
     val chores by vm.chores.collectAsStateWithLifecycle()
     val isParent = me?.role == ROLE_PARENT
+    val cards = me?.homeCards ?: HomeCards.default
 
     val today = LocalDate.now()
     val context = LocalContext.current
@@ -100,133 +102,148 @@ fun TodayScreen(vm: AppViewModel, nav: NavController) {
             Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            // Aftensmad
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                color = Green,
-                contentColor = Color.White,
-            ) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Aftensmad i dag", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFCFE5D8))
-                    Text(if (todaysMeals.isEmpty()) "Ikke planlagt" else todaysMeals.joinToString(" · ") { it.title }, fontSize = 26.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold)
-                    if (cook.isNotBlank()) {
-                        Text("$cook laver mad", fontSize = 15.sp, color = Color(0xFFE6F1EA))
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Button(
-                        onClick = {
-                            vm.mealTab = 0
-                            nav.openTab("mealplan")
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Yellow, contentColor = Ink),
-                    ) {
-                        Text(if (todaysMeals.isEmpty() && isParent) "Planlæg aftensmad" else "Se ugens madplan", fontWeight = FontWeight.Bold)
+            if (HomeCards.WEATHER in cards) {
+                WeatherCard(vm, refresh)
+            }
+            if (HomeCards.TRAIN in cards) {
+                TrainCard(vm, refresh, onSetup = { nav.navigate("family") })
+            }
+
+            if (HomeCards.DINNER in cards) {
+                // Aftensmad
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    color = Green,
+                    contentColor = Color.White,
+                ) {
+                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Aftensmad i dag", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFCFE5D8))
+                        Text(if (todaysMeals.isEmpty()) "Ikke planlagt" else todaysMeals.joinToString(" · ") { it.title }, fontSize = 26.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold)
+                        if (cook.isNotBlank()) {
+                            Text("$cook laver mad", fontSize = 15.sp, color = Color(0xFFE6F1EA))
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Button(
+                            onClick = {
+                                vm.mealTab = 0
+                                nav.openTab("mealplan")
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Yellow, contentColor = Ink),
+                        ) {
+                            Text(if (todaysMeals.isEmpty() && isParent) "Planlæg aftensmad" else "Se ugens madplan", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
 
-            // Pligter
-            if (isParent && pending.isNotEmpty() || !isParent && myChoresToday.isNotEmpty()) {
-                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), color = Color.White) {
-                    Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 8.dp)) {
-                        if (isParent) {
-                            Text("Pligter", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                "${pending.size} ${if (pending.size == 1) "pligt venter" else "pligter venter"} på din bekræftelse.",
-                                fontSize = 15.sp,
-                                color = Muted,
-                            )
-                        } else {
-                            Text("Dine pligter i dag", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                            Spacer(Modifier.height(6.dp))
-                            myChoresToday.forEach { entry ->
-                                val state = when (entry.status) {
-                                    CHORE_APPROVED -> "bekræftet"
-                                    CHORE_DONE -> "venter på bekræftelse"
-                                    else -> "ikke udført"
+            if (HomeCards.CHORES in cards) {
+                // Pligter
+                if (isParent && pending.isNotEmpty() || !isParent && myChoresToday.isNotEmpty()) {
+                    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), color = Color.White) {
+                        Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 8.dp)) {
+                            if (isParent) {
+                                Text("Pligter", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    "${pending.size} ${if (pending.size == 1) "pligt venter" else "pligter venter"} på din bekræftelse.",
+                                    fontSize = 15.sp,
+                                    color = Muted,
+                                )
+                            } else {
+                                Text("Dine pligter i dag", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.height(6.dp))
+                                myChoresToday.forEach { entry ->
+                                    val state = when (entry.status) {
+                                        CHORE_APPROVED -> "bekræftet"
+                                        CHORE_DONE -> "venter på bekræftelse"
+                                        else -> "ikke udført"
+                                    }
+                                    Text("${entry.title} · $state", fontSize = 15.sp)
                                 }
-                                Text("${entry.title} · $state", fontSize = 15.sp)
+                            }
+                            TextButton(
+                                onClick = {
+                                    vm.choreTab = 0
+                                    nav.openTab("chores")
+                                },
+                                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 12.dp),
+                            ) {
+                                Text("Åbn pligter", fontWeight = FontWeight.Bold)
                             }
                         }
-                        TextButton(
-                            onClick = {
-                                vm.choreTab = 0
-                                nav.openTab("chores")
-                            },
-                            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 12.dp),
-                        ) {
-                            Text("Åbn pligter", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            if (HomeCards.SHOPPING in cards) {
+                // Indkøbsliste
+                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), color = Color.White) {
+                    Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Indkøbsliste", Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            Pill("${open.size} mangler")
                         }
-                    }
-                }
-            }
-
-            // Indkøbsliste
-            Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), color = Color.White) {
-                Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Indkøbsliste", Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        Pill("${open.size} mangler")
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        when {
-                            open.isEmpty() -> "Der mangler ikke noget lige nu."
-                            open.size <= 3 -> open.joinToString(", ") { it.name }
-                            else -> open.take(3).joinToString(", ") { it.name } + " og ${open.size - 3} andre varer"
-                        },
-                        fontSize = 15.sp,
-                        color = Muted,
-                    )
-                    TextButton(
-                        onClick = {
-                            vm.shoppingTab = 0
-                            nav.openTab("shopping")
-                        },
-                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 12.dp),
-                    ) {
-                        Text("Åbn listen", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-
-            // Kalender
-            Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), color = Color.White) {
-                Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 8.dp)) {
-                    Text("I dag i kalenderen", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(6.dp))
-                    val shownEvents = todayEvents ?: copyToday
-                    when {
-                        shownEvents == null -> Text(
-                            "Familiekalenderen sættes op under fanen Kalender.",
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            when {
+                                open.isEmpty() -> "Der mangler ikke noget lige nu."
+                                open.size <= 3 -> open.joinToString(", ") { it.name }
+                                else -> open.take(3).joinToString(", ") { it.name } + " og ${open.size - 3} andre varer"
+                            },
                             fontSize = 15.sp,
                             color = Muted,
                         )
-                        shownEvents.isEmpty() -> Text("Ingen aftaler i dag.", fontSize = 15.sp, color = Muted)
-                        else -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            shownEvents.take(4).forEach { event ->
-                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    Text(
-                                        CalendarMath.timeLabel(event, today, zone),
-                                        Modifier.width(104.dp),
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold,
-                                    )
-                                    Text(event.title, Modifier.weight(1f), fontSize = 15.sp, maxLines = 1)
-                                }
-                            }
-                            if (shownEvents.size > 4) {
-                                Text("og ${shownEvents.size - 4} mere", fontSize = 14.sp, color = Muted)
-                            }
+                        TextButton(
+                            onClick = {
+                                vm.shoppingTab = 0
+                                nav.openTab("shopping")
+                            },
+                            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 12.dp),
+                        ) {
+                            Text("Åbn listen", fontWeight = FontWeight.Bold)
                         }
                     }
-                    TextButton(
-                        onClick = { nav.openTab("calendar") },
-                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 12.dp),
-                    ) {
-                        Text("Åbn kalenderen", fontWeight = FontWeight.Bold)
+                }
+            }
+
+            if (HomeCards.CALENDAR in cards) {
+                // Kalender
+                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), color = Color.White) {
+                    Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 8.dp)) {
+                        Text("I dag i kalenderen", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(6.dp))
+                        val shownEvents = todayEvents ?: copyToday
+                        when {
+                            shownEvents == null -> Text(
+                                "Familiekalenderen sættes op under fanen Kalender.",
+                                fontSize = 15.sp,
+                                color = Muted,
+                            )
+                            shownEvents.isEmpty() -> Text("Ingen aftaler i dag.", fontSize = 15.sp, color = Muted)
+                            else -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                shownEvents.take(4).forEach { event ->
+                                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        Text(
+                                            CalendarMath.timeLabel(event, today, zone),
+                                            Modifier.width(104.dp),
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                        Text(event.title, Modifier.weight(1f), fontSize = 15.sp, maxLines = 1)
+                                    }
+                                }
+                                if (shownEvents.size > 4) {
+                                    Text("og ${shownEvents.size - 4} mere", fontSize = 14.sp, color = Muted)
+                                }
+                            }
+                        }
+                        TextButton(
+                            onClick = { nav.openTab("calendar") },
+                            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 12.dp),
+                        ) {
+                            Text("Åbn kalenderen", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
