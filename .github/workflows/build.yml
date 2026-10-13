@@ -15,7 +15,16 @@ jobs:
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
       - name: Test og byg
-        run: ./gradlew testDebugUnitTest assembleDebug --stacktrace
+        run: |
+          set -o pipefail
+          ./gradlew testDebugUnitTest assembleDebug --stacktrace 2>&1 | tee build.log
+      - name: Vis fejl som annotationer
+        if: failure()
+        run: |
+          grep -E "^e: |FAILED|AssertionError|expected:<|What went wrong" build.log | head -40 | while IFS= read -r line; do echo "::error::$line"; done
+          for f in app/build/test-results/testDebugUnitTest/*.xml; do
+            grep -A2 "<failure" "$f" | head -6 | while IFS= read -r line; do echo "::error file=$f::$line"; done
+          done || true
       - uses: actions/upload-artifact@v4
         with:
           name: familieapp-debug

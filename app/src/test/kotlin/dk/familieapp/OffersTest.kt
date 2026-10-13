@@ -16,7 +16,7 @@ class OffersTest {
         assertEquals("oksekød", Offers.keyword("Hakket oksekød"))
         assertEquals("tomater", Offers.keyword("Hakkede tomater"))
         assertEquals("kyllingebryst", Offers.keyword("Kyllingebryst"))
-        assertNull(Offers.keyword("Salt"))
+        assertNull(Offers.keyword("2 stk. til servering"))
     }
 
     @Test
