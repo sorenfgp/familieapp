@@ -21,31 +21,49 @@ import kotlin.math.roundToInt
 private val Orange = Color(0xFFC8641B)
 private val clock = DateTimeFormatter.ofPattern("HH.mm")
 
-/** Dagens vejr i Hillerød fra Open-Meteo. */
+/** Dagens vejr i Hillerød fra Open-Meteo: morgen, middag og aften, og hvornår det regner. */
 @Composable
 fun WeatherCard(vm: AppViewModel, refresh: Int) {
     LaunchedEffect(refresh) { vm.loadWeather() }
     val result = vm.weather
     Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), color = Color.White) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Vejret i Hillerød", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val weather = result?.getOrNull()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Vejret i Hillerød", Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                if (weather != null) {
+                    Text(
+                        "${weather.temperature.roundToInt()}° nu",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Muted,
+                    )
+                }
+            }
             when {
                 weather != null -> {
-                    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("${weather.temperature.roundToInt()}°", fontSize = 36.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            WeatherService.describe(weather.code),
-                            Modifier.padding(bottom = 6.dp),
-                            fontSize = 16.sp,
-                        )
+                    Row(Modifier.fillMaxWidth()) {
+                        weather.parts.forEach { part ->
+                            Column(Modifier.weight(1f)) {
+                                Text(part.label, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Muted)
+                                Text("${part.temperature.roundToInt()}°", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                                Text(WeatherService.describe(part.code), fontSize = 13.sp, maxLines = 1)
+                            }
+                        }
                     }
+                    val rain = weather.rain
                     Text(
-                        "I dag ${weather.min.roundToInt()}° til ${weather.max.roundToInt()}° · " +
-                            "regn ${weather.rainChance} % (${"%.1f".format(weather.rainMm).replace('.', ',')} mm) · " +
-                            "vind ${weather.wind.roundToInt()} m/s",
+                        if (rain == null) {
+                            "Ingen regn resten af dagen"
+                        } else {
+                            val mm = "%.1f".format(rain.mm).replace('.', ',')
+                            "Regn kl. ${"%02d".format(rain.startHour)}–${"%02d".format(rain.endHour % 24)}, ca. $mm mm" +
+                                if (rain.moreLater) " · mere senere" else ""
+                        },
                         fontSize = 14.sp,
-                        color = Muted,
+                        fontWeight = if (rain != null) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (rain != null) Color(0xFF24598F) else Muted,
+                        maxLines = 1,
                     )
                 }
                 result == null -> Text("Henter vejret …", fontSize = 15.sp, color = Muted)

@@ -102,14 +102,16 @@ fun TodayScreen(vm: AppViewModel, nav: NavController) {
             Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            if (HomeCards.WEATHER in cards) {
+            // Hvert kort tegnes i den rækkefølge, profilen har valgt.
+            val blocks = linkedMapOf<String, @Composable () -> Unit>()
+            blocks[HomeCards.WEATHER] = {
                 WeatherCard(vm, refresh)
             }
-            if (HomeCards.TRAIN in cards) {
+            blocks[HomeCards.TRAIN] = {
                 TrainCard(vm, refresh, onSetup = { nav.navigate("family") })
             }
 
-            if (HomeCards.DINNER in cards) {
+            blocks[HomeCards.DINNER] = {
                 // Aftensmad
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -137,7 +139,7 @@ fun TodayScreen(vm: AppViewModel, nav: NavController) {
                 }
             }
 
-            if (HomeCards.CHORES in cards) {
+            blocks[HomeCards.CHORES] = {
                 // Pligter
                 if (isParent && pending.isNotEmpty() || !isParent && myChoresToday.isNotEmpty()) {
                     Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), color = Color.White) {
@@ -176,7 +178,7 @@ fun TodayScreen(vm: AppViewModel, nav: NavController) {
                 }
             }
 
-            if (HomeCards.SHOPPING in cards) {
+            blocks[HomeCards.SHOPPING] = {
                 // Indkøbsliste
                 Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), color = Color.White) {
                     Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 8.dp)) {
@@ -207,7 +209,7 @@ fun TodayScreen(vm: AppViewModel, nav: NavController) {
                 }
             }
 
-            if (HomeCards.CALENDAR in cards) {
+            blocks[HomeCards.CALENDAR] = {
                 // Kalender
                 Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), color = Color.White) {
                     Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 8.dp)) {
@@ -247,6 +249,9 @@ fun TodayScreen(vm: AppViewModel, nav: NavController) {
                     }
                 }
             }
+            HomeCards.order(me?.cardOrder.orEmpty())
+                .filter { it in cards }
+                .forEach { blocks[it]?.invoke() }
         }
     }
 }

@@ -42,6 +42,12 @@ object HomeCards {
 
     /** Toget er fra, indtil profilen selv slår det til. */
     val default = listOf(WEATHER, DINNER, CHORES, SHOPPING, CALENDAR)
+
+    /** Profilens rækkefølge, med eventuelle nye kort til sidst. */
+    fun order(cardOrder: List<String>): List<String> {
+        val known = all.map { it.first }
+        return (cardOrder.filter { it in known } + known).distinct()
+    }
 }
 
 internal fun httpGet(url: String): String {
@@ -61,56 +67,91 @@ private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
 // ---------- Vejr (Open-Meteo, kræver ingen nøgle) ----------
 
+/** Morgen, middag eller aften: gennemsnitstemperatur, det værste vejr og samlet regn. */
+data class DayPart(val label: String, val temperature: Double, val code: Int, val rainMm: Double)
+
+/** Første sammenhængende regnperiode fra nu af. [endHour] er timen, hvor regnen holder op. */
+data class RainSpell(val startHour: Int, val endHour: Int, val mm: Double, val moreLater: Boolean)
+
 data class Weather(
     val temperature: Double,
     val code: Int,
-    val max: Double,
-    val min: Double,
-    val rainChance: Int,
-    val rainMm: Double,
-    val wind: Double,
+    val parts: List<DayPart>,
+    val rain: RainSpell?,
 )
 
 object WeatherService {
     private const val HILLEROD =
         "https://api.open-meteo.com/v1/forecast?latitude=55.9267&longitude=12.3109" +
-            "&current=temperature_2m,weather_code,wind_speed_10m" +
-            "&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max" +
-            "&wind_speed_unit=ms&timezone=Europe%2FCopenhagen&forecast_days=1"
+            "&current=temperature_2m,weather_code" +
+            "&hourly=temperature_2m,precipitation,weather_code" +
+            "&timezone=Europe%2FCopenhagen&forecast_days=1"
+
+    /** Timer der regnes med i hver del af dagen. */
+    private val dayParts = listOf("Morgen" to 6..11, "Middag" to 12..17, "Aften" to 18..23)
+
+    /** Mindste regnmængde i en time, der tæller som regn (mm). */
+    private const val RAIN_THRESHOLD = 0.2
 
     suspend fun hillerod(): Weather = withContext(Dispatchers.IO) { parse(httpGet(HILLEROD)) }
 
-    fun parse(text: String): Weather {
+    fun parse(text: String, nowHour: Int = LocalTime.now().hour): Weather {
         val root = json.parseToJsonElement(text).jsonObject
         val current = root.getValue("current").jsonObject
-        val daily = root.getValue("daily").jsonObject
-        fun day(key: String): Double = daily[key]?.jsonArray?.firstOrNull()?.jsonPrimitive?.doubleOrNull ?: 0.0
-        fun now(key: String): Double = current[key]?.jsonPrimitive?.doubleOrNull ?: 0.0
+        val hourly = root.getValue("hourly").jsonObject
+        fun series(key: String): List<Double> =
+            hourly[key]?.jsonArray?.map { it.jsonPrimitive.doubleOrNull ?: 0.0 }.orEmpty()
+        val hours = hourly["time"]?.jsonArray?.map { it.jsonPrimitive.content.substringAfter('T').take(2).toIntOrNull() ?: 0 }.orEmpty()
+        val temps = series("temperature_2m")
+        val rain = series("precipitation")
+        val codes = series("weather_code").map { it.toInt() }
+
+        val parts = dayParts.map { (label, range) ->
+            val idx = hours.indices.filter { hours[it] in range }
+            DayPart(
+                label = label,
+                temperature = idx.map { temps.getOrElse(it) { 0.0 } }.average().takeIf { !it.isNaN() } ?: 0.0,
+                // Højere WMO-kode betyder groft sagt dårligere vejr; vis det værste i perioden.
+                code = idx.maxOfOrNull { codes.getOrElse(it) { -1 } } ?: -1,
+                rainMm = idx.sumOf { rain.getOrElse(it) { 0.0 } },
+            )
+        }
+
+        // Regn fra nu og resten af dagen: første sammenhængende periode.
+        val wet = hours.indices.filter { hours[it] >= nowHour && rain.getOrElse(it) { 0.0 } >= RAIN_THRESHOLD }
+        val spell = wet.firstOrNull()?.let { first ->
+            var last = first
+            while (last + 1 in wet) last++
+            RainSpell(
+                startHour = hours[first],
+                endHour = hours[last] + 1,
+                mm = (first..last).sumOf { rain.getOrElse(it) { 0.0 } },
+                moreLater = wet.any { it > last },
+            )
+        }
+
         return Weather(
-            temperature = now("temperature_2m"),
+            temperature = current["temperature_2m"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
             code = current["weather_code"]?.jsonPrimitive?.intOrNull ?: -1,
-            max = day("temperature_2m_max"),
-            min = day("temperature_2m_min"),
-            rainChance = day("precipitation_probability_max").toInt(),
-            rainMm = day("precipitation_sum"),
-            wind = now("wind_speed_10m"),
+            parts = parts,
+            rain = spell,
         )
     }
 
-    /** WMO-vejrkoder på dansk. */
+    /** Kort vejrbeskrivelse til de små kolonner. */
     fun describe(code: Int): String = when (code) {
-        0 -> "Klart vejr"
-        1 -> "Overvejende klart"
-        2 -> "Delvist skyet"
+        0 -> "Klart"
+        1 -> "Let skyet"
+        2 -> "Skyet"
         3 -> "Overskyet"
         45, 48 -> "Tåge"
         in 51..57 -> "Støvregn"
         in 61..67 -> "Regn"
         in 71..77 -> "Sne"
-        in 80..82 -> "Regnbyger"
+        in 80..82 -> "Byger"
         85, 86 -> "Snebyger"
         in 95..99 -> "Torden"
-        else -> "Ukendt vejr"
+        else -> "–"
     }
 }
 

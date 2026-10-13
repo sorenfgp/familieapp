@@ -9,17 +9,25 @@ import java.time.LocalDateTime
 
 class HomeInfoTest {
     @Test
-    fun readsOpenMeteoResponse() {
+    fun splitsDayAndFindsRain() {
         val text = """
-            {"current":{"time":"2026-10-13T07:30","temperature_2m":9.6,"weather_code":61,"wind_speed_10m":4.2},
-             "daily":{"time":["2026-10-13"],"temperature_2m_max":[13.1],"temperature_2m_min":[7.4],
-                      "precipitation_sum":[2.3],"precipitation_probability_max":[80]}}
+            {"current":{"temperature_2m":9.6,"weather_code":3},
+             "hourly":{"time":["2026-10-13T00:00","2026-10-13T01:00","2026-10-13T02:00","2026-10-13T03:00","2026-10-13T04:00","2026-10-13T05:00","2026-10-13T06:00","2026-10-13T07:00","2026-10-13T08:00","2026-10-13T09:00","2026-10-13T10:00","2026-10-13T11:00","2026-10-13T12:00","2026-10-13T13:00","2026-10-13T14:00","2026-10-13T15:00","2026-10-13T16:00","2026-10-13T17:00","2026-10-13T18:00","2026-10-13T19:00","2026-10-13T20:00","2026-10-13T21:00","2026-10-13T22:00","2026-10-13T23:00"],
+                       "temperature_2m":[8.0,8.0,8.0,8.0,8.0,8.0,8.0,8.0,8.0,8.0,8.0,8.0,12.0,12.0,12.0,12.0,12.0,12.0,10.0,10.0,10.0,10.0,10.0,10.0],
+                       "precipitation":[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1.0,1.5,0.5,0.0,0.0,0.0,0.4,0.0,0.0,0.0],
+                       "weather_code":[3,3,3,3,3,3,3,3,3,3,3,3,3,3,61,63,61,3,3,3,61,3,3,3]}}
         """.trimIndent()
-        val weather = WeatherService.parse(text)
-        assertEquals(9.6, weather.temperature, 0.01)
-        assertEquals(61, weather.code)
-        assertEquals(80, weather.rainChance)
-        assertEquals("Regn", WeatherService.describe(weather.code))
+        val weather = WeatherService.parse(text, nowHour = 7)
+        assertEquals(listOf("Morgen", "Middag", "Aften"), weather.parts.map { it.label })
+        assertEquals(12.0, weather.parts[1].temperature, 0.01)
+        assertEquals("Regn", WeatherService.describe(weather.parts[1].code))
+        val rain = weather.rain!!
+        assertEquals(14, rain.startHour)
+        assertEquals(17, rain.endHour)
+        assertEquals(3.0, rain.mm, 0.01)
+        assertTrue(rain.moreLater)
+        // Efter regnen er der ingen regn i første periode.
+        assertEquals(20, WeatherService.parse(text, nowHour = 18).rain!!.startHour)
     }
 
     @Test

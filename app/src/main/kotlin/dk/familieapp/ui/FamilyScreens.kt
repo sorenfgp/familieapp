@@ -10,6 +10,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -468,21 +471,28 @@ fun FamilyScreen(vm: AppViewModel, nav: NavController) {
             SectionLabel("Forsiden for ${me?.name.orEmpty()}")
             WhiteCard {
                 val shown = me?.homeCards ?: HomeCards.default
-                HomeCards.all.forEach { (card, label) ->
+                val labels = HomeCards.all.toMap()
+                val order = HomeCards.order(me?.cardOrder.orEmpty())
+                order.forEachIndexed { index, card ->
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .clickable { vm.setHomeCard(card, card !in shown) }
                             .heightIn(min = 52.dp)
-                            .padding(horizontal = 16.dp),
+                            .padding(start = 4.dp, end = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(label, Modifier.weight(1f), fontSize = 16.sp)
+                        IconButton(onClick = { vm.moveHomeCard(card, -1) }, enabled = index > 0) {
+                            Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Flyt ${labels[card]} op")
+                        }
+                        IconButton(onClick = { vm.moveHomeCard(card, 1) }, enabled = index < order.lastIndex) {
+                            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Flyt ${labels[card]} ned")
+                        }
+                        Text(labels[card].orEmpty(), Modifier.weight(1f), fontSize = 16.sp)
                         Switch(checked = card in shown, onCheckedChange = { vm.setHomeCard(card, it) })
                     }
                 }
             }
-            Text("Valget gælder kun din profil. De andre vælger selv.", fontSize = 13.sp, color = Muted)
+            Text("Pilene bestemmer rækkefølgen på forsiden. Valget gælder kun din profil.", fontSize = 13.sp, color = Muted)
 
             if (isParent) {
                 SectionLabel("S-tog (Rejseplanen)")

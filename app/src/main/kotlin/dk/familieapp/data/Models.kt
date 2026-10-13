@@ -88,6 +88,8 @@ data class Profile(
     val color: Int = 0,
     /** Kortene, profilen vil se på forsiden (se [HomeCards]). */
     val homeCards: List<String> = HomeCards.default,
+    /** Profilens rækkefølge på forsidens kort. Tom = standardrækkefølgen. */
+    val cardOrder: List<String> = emptyList(),
 )
 
 /** Fælles indstillinger for familien. Gemmes som ét dokument med id "main". */

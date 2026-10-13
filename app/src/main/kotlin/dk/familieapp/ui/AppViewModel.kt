@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dk.familieapp.data.Addition
+import dk.familieapp.data.HomeCards
 import dk.familieapp.data.Rejseplanen
 import dk.familieapp.data.TrainStatus
 import dk.familieapp.data.Weather
@@ -248,6 +249,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun setRejseplanenKey(key: String) {
         saveSettings { it.copy(rejseplanenKey = key.trim()) }
         trainAt = 0
+    }
+
+    /** Flytter et kort op ([step] = -1) eller ned (+1) på forsiden for den valgte profil. */
+    fun moveHomeCard(card: String, step: Int) {
+        val profile = me.value ?: return
+        val order = HomeCards.order(profile.cardOrder).toMutableList()
+        val from = order.indexOf(card)
+        val to = from + step
+        if (from < 0 || to !in order.indices) return
+        order.add(to, order.removeAt(from))
+        put(Cols.profiles, profile.copy(cardOrder = order))
     }
 
     /** Slår et kort på forsiden til eller fra for den valgte profil. */
