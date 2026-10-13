@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -54,6 +55,12 @@ fun MealPlanScreen(vm: AppViewModel, nav: NavController) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Næste uge")
                 }
             }
+        } else if (vm.mealTab == 2) {
+            ScreenHeader("Ugens tilbud i Bilka, Rema 1000, Netto og Meny", "Forslag") {
+                IconButton(onClick = { vm.loadOfferSuggestions(force = true) }, enabled = !vm.offersLoading) {
+                    Icon(Icons.Filled.Refresh, contentDescription = "Hent tilbud igen")
+                }
+            }
         } else {
             ScreenHeader("Familiens favoritter · ${recipes.size} retter", "Opskrifter") {
                 FilledIconButton(
@@ -65,15 +72,15 @@ fun MealPlanScreen(vm: AppViewModel, nav: NavController) {
             }
         }
         Segmented(
-            options = listOf("Ugeplan", "Opskrifter"),
+            options = listOf("Ugeplan", "Opskrifter", "Forslag"),
             selected = vm.mealTab,
             onSelect = { vm.mealTab = it },
             modifier = Modifier.padding(horizontal = 20.dp),
         )
-        if (vm.mealTab == 0) {
-            WeekPlan(vm, meals, recipes, start, today, Modifier.weight(1f))
-        } else {
-            RecipeList(vm, meals, recipes, nav, Modifier.weight(1f))
+        when (vm.mealTab) {
+            0 -> WeekPlan(vm, meals, recipes, start, today, Modifier.weight(1f))
+            2 -> OfferSuggestions(vm, nav, Modifier.weight(1f))
+            else -> RecipeList(vm, meals, recipes, nav, Modifier.weight(1f))
         }
     }
 }

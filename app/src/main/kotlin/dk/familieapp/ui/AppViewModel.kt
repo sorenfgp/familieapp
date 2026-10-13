@@ -9,6 +9,14 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dk.familieapp.data.Addition
+import dk.familieapp.data.Dates
+import dk.familieapp.data.KIND_DINNER
+import dk.familieapp.data.Offer
+import dk.familieapp.data.Offers
+import dk.familieapp.data.RecipeSuggestion
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import dk.familieapp.data.HomeCards
 import dk.familieapp.data.Rejseplanen
 import dk.familieapp.data.TrainStatus
@@ -206,6 +214,50 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun removeMeal(meal: PlannedMeal) {
         if (!isParent) return
         _store.value?.delete(Cols.meals, listOf(meal.id.ifBlank { meal.date }))
+    }
+
+    // ---- Forslag til madplanen ud fra ugens tilbud ----
+
+    var offerSuggestions by mutableStateOf<Result<List<RecipeSuggestion>>?>(null)
+        private set
+    var offersLoading by mutableStateOf(false)
+        private set
+    private val offerCache = mutableMapOf<String, List<Offer>>()
+    private var offerCacheWeek = ""
+
+    /**
+     * Slår ingredienserne fra familiens aftensretter op i ugens tilbud og sorterer retterne efter,
+     * hvor mange ingredienser der er på tilbud. Opslagene huskes resten af ugen.
+     */
+    fun loadOfferSuggestions(force: Boolean = false) {
+        if (offersLoading) return
+        val today = LocalDate.now()
+        val week = "${today.year}-${Dates.weekNumber(today)}"
+        if (force || week != offerCacheWeek) {
+            offerCache.clear()
+            offerCacheWeek = week
+        }
+        val dinners = recipes.value.filter { it.kind == KIND_DINNER }
+        val keywords = dinners.flatMap { it.ingredients }.mapNotNull { Offers.keyword(it.name) }.distinct()
+        val missing = keywords.filter { it !in offerCache }
+        offersLoading = true
+        viewModelScope.launch {
+            offerSuggestions = runCatching {
+                var failures = 0
+                missing.chunked(4).forEach { chunk ->
+                    coroutineScope {
+                        chunk.map { keyword ->
+                            async { keyword to runCatching { Offers.search(keyword) } }
+                        }.awaitAll()
+                    }.forEach { (keyword, result) ->
+                        result.onSuccess { offerCache[keyword] = it }.onFailure { failures++ }
+                    }
+                }
+                if (missing.isNotEmpty() && failures == missing.size) error("Tilbuddene kunne ikke hentes")
+                Offers.suggest(dinners, offerCache)
+            }
+            offersLoading = false
+        }
     }
 
     // ---- Kort på forsiden: vejr og S-tog ----
