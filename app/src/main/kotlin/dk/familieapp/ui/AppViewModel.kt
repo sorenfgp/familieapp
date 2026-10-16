@@ -13,7 +13,6 @@ import dk.familieapp.data.Dates
 import dk.familieapp.data.KIND_DINNER
 import dk.familieapp.data.Offer
 import dk.familieapp.data.Offers
-import dk.familieapp.data.RecipeSuggestion
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -218,7 +217,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Forslag til madplanen ud fra ugens tilbud ----
 
-    var offerSuggestions by mutableStateOf<Result<List<RecipeSuggestion>>?>(null)
+    /** Fundne tilbud pr. søgeord, fra alle fire kæder. Butiksvalget filtreres først ved visning. */
+    var offerData by mutableStateOf<Result<Map<String, List<Offer>>>?>(null)
         private set
     var offersLoading by mutableStateOf(false)
         private set
@@ -242,7 +242,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val missing = keywords.filter { it !in offerCache }
         offersLoading = true
         viewModelScope.launch {
-            offerSuggestions = runCatching {
+            offerData = runCatching {
                 var failures = 0
                 missing.chunked(4).forEach { chunk ->
                     coroutineScope {
@@ -254,7 +254,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
                 if (missing.isNotEmpty() && failures == missing.size) error("Tilbuddene kunne ikke hentes")
-                Offers.suggest(dinners, offerCache)
+                offerCache.toMap()
             }
             offersLoading = false
         }
@@ -295,6 +295,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 Rejseplanen.status(key, id(Rejseplanen.FAVRHOLM), id(Rejseplanen.NORREPORT))
             }
+        }
+    }
+
+    /** Slår en butik til eller fra i tilbudsforslagene (kun forældre). */
+    fun setOfferStore(store: String, included: Boolean) {
+        if (!isParent) return
+        saveSettings { current ->
+            val stores = if (included) (current.offerStores + store).distinct() else current.offerStores - store
+            current.copy(offerStores = Offers.STORES.filter { it in stores })
         }
     }
 

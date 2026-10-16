@@ -104,6 +104,8 @@ data class FamilySettings(
     val rewardMode: String = "text",
     /** Nøgle til Rejseplanens API, så forsiden kan vise S-togets afgange. */
     val rejseplanenKey: String = "",
+    /** Butikker, der indgår i tilbudsforslagene. Gælder hele familien. */
+    val offerStores: List<String> = Offers.STORES,
 )
 
 /** En fast pligt: samme barn på faste ugedage (1 = mandag … 7 = søndag). */

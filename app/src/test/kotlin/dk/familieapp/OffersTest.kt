@@ -56,5 +56,9 @@ class OffersTest {
         val suggestions = Offers.suggest(listOf(karry, lasagne, kage), offers)
         assertEquals(listOf("Lasagne", "Kylling i karry"), suggestions.map { it.recipe.name })
         assertEquals("Bilka", suggestions[0].matches.first().second.store)
+
+        // Uden Bilka bliver Netto det billigste bud på oksekød.
+        val withoutBilka = Offers.suggest(listOf(lasagne), offers.mapValues { (_, o) -> o.filter { it.store != "Bilka" } })
+        assertEquals("Netto", withoutBilka[0].matches.first().second.store)
     }
 }

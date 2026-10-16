@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+
 package dk.familieapp.ui
 
 import androidx.compose.foundation.layout.*
@@ -17,6 +19,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import dk.familieapp.data.Dates
 import dk.familieapp.data.Offer
+import dk.familieapp.data.Offers
 import dk.familieapp.data.ROLE_PARENT
 import dk.familieapp.data.Recipe
 import dk.familieapp.data.RecipeSuggestion
@@ -42,14 +45,39 @@ fun OfferSuggestions(vm: AppViewModel, nav: NavController, modifier: Modifier) {
 
     LaunchedEffect(recipes.size) { if (recipes.isNotEmpty()) vm.loadOfferSuggestions() }
 
-    val result = vm.offerSuggestions
-    val suggestions = result?.getOrNull()
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val stores = settings?.offerStores ?: Offers.STORES
+    val result = vm.offerData
+    // Kun tilbud fra de valgte butikker tæller med.
+    val suggestions = result?.getOrNull()?.let { data ->
+        Offers.suggest(recipes, data.mapValues { (_, offers) -> offers.filter { it.store in stores } })
+    }
 
     LazyColumn(
         modifier,
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        item(key = "stores") {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Offers.STORES.forEach { store ->
+                        FilterChip(
+                            selected = store in stores,
+                            onClick = { vm.setOfferStore(store, store !in stores) },
+                            enabled = isParent,
+                            label = { Text(store) },
+                        )
+                    }
+                }
+                Text(
+                    if (isParent) "Vælg de butikker, I vil handle i. Valget gælder hele familien."
+                    else "Forældrene vælger butikkerne.",
+                    fontSize = 13.sp,
+                    color = Muted,
+                )
+            }
+        }
         item(key = "intro") {
             Text(
                 "Jeres aftensretter med flest ingredienser på tilbud i denne uge, inden for 15 km af Hillerød.",
@@ -57,6 +85,11 @@ fun OfferSuggestions(vm: AppViewModel, nav: NavController, modifier: Modifier) {
                 color = Muted,
             )
         }
+        if (stores.isEmpty()) {
+            item(key = "no-stores") {
+                Text("Vælg mindst én butik for at få forslag.", Modifier.padding(vertical = 12.dp), color = Muted)
+            }
+        } else
         when {
             recipes.isEmpty() -> item(key = "none") {
                 Text("Der er ingen opskrifter endnu.", Modifier.padding(vertical = 12.dp), color = Muted)
@@ -81,7 +114,7 @@ fun OfferSuggestions(vm: AppViewModel, nav: NavController, modifier: Modifier) {
             }
             suggestions != null && suggestions.isEmpty() -> item(key = "empty") {
                 Text(
-                    "Ingen af aftensretternes ingredienser er på tilbud lige nu.",
+                    "Ingen af aftensretternes ingredienser er på tilbud i de valgte butikker lige nu.",
                     Modifier.padding(vertical = 12.dp),
                     color = Muted,
                 )
