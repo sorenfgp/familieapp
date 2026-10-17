@@ -140,8 +140,6 @@ fun CalendarScreen(vm: AppViewModel) {
     val writesDirectly = local?.canWrite == true
     val canChange = writesDirectly || readsCopy
 
-    }
-
     fun move(step: Long) {
         selectedIso = (if (monthView) selected.plusMonths(step) else selected.plusWeeks(step)).toString()
     }
@@ -190,6 +188,7 @@ fun CalendarScreen(vm: AppViewModel) {
             vm.requestCalendarChange(request)
             context.toast("Sendt. Ændringen kommer i kalenderen, når en forælders telefon har opdateret den.")
         }
+    }
 
     val monthName = Dates.months[selected.monthValue - 1].replaceFirstChar { it.uppercase() }
     val dayEvents = events.filter { it.isOn(selected) }
