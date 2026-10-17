@@ -2,7 +2,7 @@
 
 Android-app til familiens madplan, opskrifter og indkøb. Skrevet i Kotlin med Jetpack Compose.
 
-## Hvad appen kan (version 0.14)
+## Hvad appen kan (version 0.15)
 
 - **Profiler:** hver telefon eller tablet vælger en profil. Forældreprofiler kræver forælder-PIN. Avataren øverst fører til familie og indstillinger.
 - **Madplan:** en eller flere retter pr. dag (fx små retter eller en dessert), uge for uge fra søndag til lørdag. Vælg fra opskrifterne eller skriv en ret selv.
@@ -18,7 +18,7 @@ Android-app til familiens madplan, opskrifter og indkøb. Skrevet i Kotlin med J
 
 Appen læser og skriver i Androids kalenderlager, som Google Kalender selv synkroniserer med Google. Der er derfor ingen Google-login eller Google Cloud-opsætning. Familiekalenderen skal være slået til i Google Kalender-appen på forældrenes telefoner, og en forælder skal have ret til at ændre i den for at oprette aftaler fra appen.
 
-Enheder uden adgang til kalenderen (typisk børnenes) læser en kopi. Forældrenes telefoner lægger aftalerne fra en uge tilbage til 90 dage frem i familiens data, når appen åbnes og hver 3. time i baggrunden. Kopien kan derfor være op til et par timer gammel, og børnene kan ikke oprette aftaler.
+Enheder uden adgang til kalenderen (typisk børnenes) læser en kopi. Forældrenes telefoner lægger aftalerne fra en uge tilbage til 90 dage frem i familiens data, når appen åbnes og hvert kvarter i baggrunden. Børnene kan også oprette og ændre aftaler: ændringen gemmes i familiens data og udføres af en forælders telefon, når appen åbnes eller i baggrunden hvert kvarter.
 
 ### Profiler og sikkerhed
 

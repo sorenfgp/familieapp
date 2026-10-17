@@ -176,4 +176,41 @@ data class CalendarSyncInfo(
     val syncedAt: Long = 0,
 )
 
+/**
+ * En ændring i familiekalenderen fra en enhed uden adgang til Google-kalenderen (typisk et barns).
+ * En telefon med adgang udfører ændringen ved næste opdatering og sletter den så.
+ */
+@Serializable
+data class CalendarRequest(
+    val id: String = "",
+    /** "create", "who", "move", "cancel", "cancelRange" eller "delete". */
+    val op: String = "",
+    val createdBy: String = "",
+    val createdAt: Long = 0,
+    val attempts: Int = 0,
+    // Ny aftale
+    val title: String = "",
+    val location: String = "",
+    val date: String = "",
+    val endDate: String = "",
+    /** Minutter efter midnat. -1 = heldagsaftale. */
+    val startMinutes: Int = -1,
+    val endMinutes: Int = -1,
+    val who: List<String> = emptyList(),
+    /** 1 = mandag … 7 = søndag. Tom = ingen gentagelse. */
+    val repeatWeekdays: List<Int> = emptyList(),
+    val repeatInterval: Int = 1,
+    val repeatUntil: String = "",
+    // Eksisterende aftale
+    val eventId: Long = 0,
+    val begin: Long = 0,
+    val end: Long = 0,
+    val allDay: Boolean = false,
+    val recurring: Boolean = false,
+    val description: String = "",
+    val newDate: String = "",
+    val from: String = "",
+    val to: String = "",
+)
+
 fun newId(): String = UUID.randomUUID().toString()

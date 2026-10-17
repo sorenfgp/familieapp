@@ -23,6 +23,7 @@ import dk.familieapp.data.Weather
 import dk.familieapp.data.WeatherService
 import dk.familieapp.data.CalendarMirror
 import dk.familieapp.data.CalendarSyncInfo
+import dk.familieapp.data.CalendarRequest
 import dk.familieapp.data.CategoryOverride
 import dk.familieapp.data.MirroredEvent
 import kotlinx.coroutines.launch
@@ -338,6 +339,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private var lastMirrorSync = 0L
+
+    /** Ændringer fra enheder uden adgang til Google-kalenderen, som venter på en forælders telefon. */
+    val calendarRequests: StateFlow<List<CalendarRequest>> = observe(Cols.calendarRequests)
+
+    fun requestCalendarChange(request: CalendarRequest) {
+        put(Cols.calendarRequests, request.copy(id = newId(), createdBy = myId, createdAt = now()))
+    }
 
     /**
      * Har denne telefon familiekalenderen, kopieres dens aftaler til familiens data,

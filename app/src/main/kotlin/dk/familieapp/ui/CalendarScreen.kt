@@ -42,6 +42,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dk.familieapp.data.CalendarEvent
 import dk.familieapp.data.CalendarMath
 import dk.familieapp.data.CalendarMirror
+import dk.familieapp.data.CalendarRequest
 import dk.familieapp.data.Dates
 import dk.familieapp.data.DeviceCalendar
 import dk.familieapp.data.DeviceCalendarRepo
@@ -79,6 +80,7 @@ fun CalendarScreen(vm: AppViewModel) {
     val me by vm.me.collectAsStateWithLifecycle()
     val mirror by vm.calendarMirror.collectAsStateWithLifecycle()
     val syncInfo by vm.calendarSync.collectAsStateWithLifecycle()
+    val requests by vm.calendarRequests.collectAsStateWithLifecycle()
     val profiles by vm.profiles.collectAsStateWithLifecycle()
     val isParent = me?.role == ROLE_PARENT
     val familyKey = settings?.calendarKey.orEmpty()
@@ -134,6 +136,11 @@ fun CalendarScreen(vm: AppViewModel) {
     val local = familyCalendar
     val events = if (local != null) localEvents else CalendarMirror.eventsBetween(mirror, rangeStart, rangeEnd, zone)
     val readsCopy = local == null && familyKey.isNotBlank()
+    // Telefonen kan selv skrive i kalenderen. Ellers sendes ændringer til en forælders telefon.
+    val writesDirectly = local?.canWrite == true
+    val canChange = writesDirectly || readsCopy
+
+    }
 
     fun move(step: Long) {
         selectedIso = (if (monthView) selected.plusMonths(step) else selected.plusWeeks(step)).toString()
@@ -151,9 +158,10 @@ fun CalendarScreen(vm: AppViewModel) {
     }
 
     fun startCreating() {
-        val calendar = familyCalendar ?: return
+        val calendar = familyCalendar
         when {
-            !calendar.canWrite -> context.toast("Telefonens Google-konto må kun læse familiekalenderen")
+            calendar == null -> if (readsCopy) creating = true
+            !calendar.canWrite -> creating = true
             !repo.hasWritePermission() -> permissionLauncher.launch(calendarPermissions)
             else -> creating = true
         }
@@ -173,6 +181,15 @@ fun CalendarScreen(vm: AppViewModel) {
             vm.syncCalendar(force = true)
         }
     }
+
+    /** Udfører ændringen direkte, eller sender den videre, hvis telefonen ikke har kalenderen. */
+    fun act(success: String, failure: String, request: CalendarRequest, direct: suspend () -> Boolean) {
+        if (writesDirectly) {
+            change(success, failure, direct)
+        } else {
+            vm.requestCalendarChange(request)
+            context.toast("Sendt. Ændringen kommer i kalenderen, når en forælders telefon har opdateret den.")
+        }
 
     val monthName = Dates.months[selected.monthValue - 1].replaceFirstChar { it.uppercase() }
     val dayEvents = events.filter { it.isOn(selected) }
@@ -304,6 +321,16 @@ fun CalendarScreen(vm: AppViewModel) {
                         profiles = profiles.orEmpty(),
                     )
                 }
+                items(CalendarMirror.pendingOn(requests, selected), key = { "pending-" + it.id }) { r ->
+                    AgendaRow(
+                        color = Muted,
+                        title = r.title,
+                        detail = "Venter på at blive gemt i kalenderen",
+                        onClick = null,
+                        who = r.who.takeIf { it.isNotEmpty() },
+                        profiles = profiles.orEmpty(),
+                    )
+                }
                 items(dayMeals, key = { "meal-" + it.id }) { meal ->
                     AgendaRow(
                         color = Yellow,
@@ -320,7 +347,7 @@ fun CalendarScreen(vm: AppViewModel) {
             }
         }
 
-        if (local != null) {
+        if (canChange) {
             FloatingActionButton(
                 onClick = { startCreating() },
                 modifier = Modifier
@@ -353,23 +380,34 @@ fun CalendarScreen(vm: AppViewModel) {
             profiles = profiles.orEmpty(),
             onSave = { title, location, date, endDate, startTime, endTime, who, repeat ->
                 creating = false
-                if (calendar != null) {
-                    change(
-                        success = if (repeat != null) "Den faste aftale er gemt i $familyName" else "Aftalen er gemt i $familyName",
-                        failure = "Aftalen kunne ikke gemmes",
-                    ) {
-                        repo.insertEvent(
-                            calendarId = calendar.id,
-                            title = title,
-                            location = location,
-                            date = date,
-                            start = startTime,
-                            end = endTime,
-                            description = EventWho.apply("", who),
-                            repeat = repeat,
-                            endDate = endDate,
-                        )
-                    }
+                act(
+                    success = if (repeat != null) "Den faste aftale er gemt i $familyName" else "Aftalen er gemt i $familyName",
+                    failure = "Aftalen kunne ikke gemmes",
+                    request = CalendarRequest(
+                        op = "create",
+                        title = title,
+                        location = location,
+                        date = date.toString(),
+                        endDate = endDate.toString(),
+                        startMinutes = startTime?.let { it.hour * 60 + it.minute } ?: -1,
+                        endMinutes = endTime?.let { it.hour * 60 + it.minute } ?: -1,
+                        who = who,
+                        repeatWeekdays = repeat?.weekdays?.map { it.value }?.sorted().orEmpty(),
+                        repeatInterval = repeat?.intervalWeeks ?: 1,
+                        repeatUntil = repeat?.until?.toString().orEmpty(),
+                    ),
+                ) {
+                    calendar != null && repo.insertEvent(
+                        calendarId = calendar.id,
+                        title = title,
+                        location = location,
+                        date = date,
+                        start = startTime,
+                        end = endTime,
+                        description = EventWho.apply("", who),
+                        repeat = repeat,
+                        endDate = endDate,
+                    )
                 }
             },
             onDismiss = { creating = false },
@@ -377,40 +415,53 @@ fun CalendarScreen(vm: AppViewModel) {
     }
 
     openEvent?.let { event ->
+        val base = CalendarRequest(
+            title = event.title,
+            eventId = event.eventId,
+            begin = event.begin,
+            end = event.end,
+            allDay = event.allDay,
+            recurring = event.recurring,
+            description = event.description,
+        )
         EventDialog(
             event = event,
             day = selected,
             zone = zone,
             profiles = profiles.orEmpty(),
-            canEdit = local?.canWrite == true,
+            canEdit = canChange,
             canOpen = local != null,
             onSaveWho = { who ->
                 openEvent = null
-                change("Gemt i $familyName", "Aftalen kunne ikke ændres") {
+                act("Gemt i $familyName", "Aftalen kunne ikke ændres", base.copy(op = "who", who = who)) {
                     repo.updateDescription(event.eventId, EventWho.apply(event.description, who))
                 }
             },
             onMove = { newDate ->
                 openEvent = null
-                change("Flyttet til ${Dates.long(newDate)}", "Aftalen kunne ikke flyttes") {
+                act("Flyttet til ${Dates.long(newDate)}", "Aftalen kunne ikke flyttes", base.copy(op = "move", newDate = newDate.toString())) {
                     repo.moveEvent(event, newDate)
                 }
             },
             onCancelOnce = {
                 openEvent = null
-                change("Aflyst ${Dates.long(event.firstDay)}", "Aftalen kunne ikke aflyses") {
+                act("Aflyst ${Dates.long(event.firstDay)}", "Aftalen kunne ikke aflyses", base.copy(op = "cancel")) {
                     repo.cancelOccurrence(event.eventId, event.begin)
                 }
             },
             onCancelRange = { from, to ->
                 openEvent = null
-                change("Aflyst fra ${Dates.short(from)} til ${Dates.short(to)}", "Ingen gange at aflyse i perioden") {
+                act(
+                    "Aflyst fra ${Dates.short(from)} til ${Dates.short(to)}",
+                    "Ingen gange at aflyse i perioden",
+                    base.copy(op = "cancelRange", from = from.toString(), to = to.toString()),
+                ) {
                     repo.cancelOccurrences(event.eventId, from, to) > 0
                 }
             },
             onDelete = {
                 openEvent = null
-                change("Aftalen er slettet", "Aftalen kunne ikke slettes") {
+                act("Aftalen er slettet", "Aftalen kunne ikke slettes", base.copy(op = "delete")) {
                     repo.deleteEvent(event.eventId)
                 }
             },
