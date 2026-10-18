@@ -12,6 +12,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -85,6 +88,53 @@ fun ChoresScreen(vm: AppViewModel, nav: NavController) {
     }
 }
 
+/**
+ * Ugens pligter dag for dag: i dag og kommende dage øverst, tidligere dage nederst
+ * i en gruppe, der er foldet sammen.
+ */
+private fun LazyListScope.choreDays(
+    entries: List<ChoreEntry>,
+    start: LocalDate,
+    today: LocalDate,
+    pastOpen: Boolean,
+    onTogglePast: () -> Unit,
+    row: @Composable (ChoreEntry) -> Unit,
+) {
+    val days = (0L..6L).map { start.plusDays(it) }
+    val (past, current) = days.partition { it.isBefore(today) }
+    fun dayItems(day: LocalDate) {
+        val dayEntries = entries.filter { it.date == day.toString() }
+        if (dayEntries.isNotEmpty()) {
+            item(key = "day-$day") { SectionLabel(dayLabel(day, today)) }
+            items(dayEntries, key = { it.id }) { row(it) }
+        }
+    }
+    current.forEach { dayItems(it) }
+    val pastCount = entries.count { e -> past.any { it.toString() == e.date } }
+    if (pastCount > 0) {
+        item(key = "past-toggle") {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(onClick = onTogglePast)
+                    .heightIn(min = 48.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    if (pastOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = if (pastOpen) "Fold sammen" else "Fold ud",
+                    tint = Muted,
+                )
+                Text("Tidligere dage ($pastCount)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Muted)
+            }
+        }
+        if (pastOpen) past.reversed().forEach { dayItems(it) }
+    }
+}
+
 private fun dayLabel(date: LocalDate, today: LocalDate): String {
     val label = Dates.long(date).replaceFirstChar { it.uppercase() }
     return if (date == today) "I dag · $label" else label
@@ -106,6 +156,9 @@ private fun ParentWeek(
     val pending = week.filter { it.status == CHORE_DONE }
     var addingAdHoc by remember { mutableStateOf(false) }
 
+    // Tidligere dage ligger nederst og er foldet sammen fra start.
+    var pastOpen by rememberSaveable(start) { mutableStateOf(false) }
+
     LazyColumn(
         modifier,
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
@@ -126,16 +179,13 @@ private fun ParentWeek(
                 ChoreRow(vm, entry, profiles, me, showDate = true)
             }
         }
-        for (offset in 0L..6L) {
-            val day = start.plusDays(offset)
-            val dayEntries = week.filter { it.date == day.toString() && it.status != CHORE_DONE }
-            if (dayEntries.isNotEmpty()) {
-                item(key = "day-$day") { SectionLabel(dayLabel(day, today)) }
-                items(dayEntries, key = { it.id }) { entry ->
-                    ChoreRow(vm, entry, profiles, me, showDate = false)
-                }
-            }
-        }
+        choreDays(
+            entries = week.filter { it.status != CHORE_DONE },
+            start = start,
+            today = today,
+            pastOpen = pastOpen,
+            onTogglePast = { pastOpen = !pastOpen },
+        ) { entry -> ChoreRow(vm, entry, profiles, me, showDate = false) }
         if (week.isEmpty() && children.isNotEmpty()) {
             item(key = "empty") {
                 Text(
@@ -188,6 +238,9 @@ private fun ChildWeek(
 ) {
     val earned = mine.filter { it.status == CHORE_APPROVED && it.reward.isNotBlank() }
 
+    // Tidligere dage ligger nederst og er foldet sammen fra start.
+    var pastOpen by rememberSaveable(start) { mutableStateOf(false) }
+
     LazyColumn(
         modifier,
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
@@ -208,16 +261,13 @@ private fun ChildWeek(
                 Text("Ingen pligter i denne uge.", Modifier.padding(vertical = 8.dp), color = Muted)
             }
         }
-        for (offset in 0L..6L) {
-            val day = start.plusDays(offset)
-            val dayEntries = mine.filter { it.date == day.toString() }
-            if (dayEntries.isNotEmpty()) {
-                item(key = "day-$day") { SectionLabel(dayLabel(day, today)) }
-                items(dayEntries, key = { it.id }) { entry ->
-                    ChoreRow(vm, entry, profiles, me, showDate = false)
-                }
-            }
-        }
+        choreDays(
+            entries = mine,
+            start = start,
+            today = today,
+            pastOpen = pastOpen,
+            onTogglePast = { pastOpen = !pastOpen },
+        ) { entry -> ChoreRow(vm, entry, profiles, me, showDate = false) }
     }
 }
 
