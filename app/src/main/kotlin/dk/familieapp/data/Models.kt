@@ -35,6 +35,15 @@ data class Recipe(
     val createdAt: Long = 0,
     /** Aftensmad ([KIND_DINNER]) eller dessert ([KIND_DESSERT]). */
     val kind: String = KIND_DINNER,
+    /** Billedet på opskriftssiden, hvis den er importeret. Selve billedet gemmes i [RecipeImage]. */
+    val imageUrl: String = "",
+)
+
+/** Billede af retten som base64-JPEG. id er opskriftens id. */
+@Serializable
+data class RecipeImage(
+    val id: String = "",
+    val data: String = "",
 )
 
 /** Én ret på madplanen. [date] er ISO-dato (2026-10-10). */

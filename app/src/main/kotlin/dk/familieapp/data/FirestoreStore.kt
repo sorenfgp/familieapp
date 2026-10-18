@@ -29,6 +29,15 @@ class FirestoreStore(householdId: String) : FamilyStore {
         awaitClose { registration.remove() }
     }
 
+    override fun <T : Any> observeOne(col: Col<T>, id: String): Flow<T?> = callbackFlow {
+        val registration = root.collection(col.name).document(id).addSnapshotListener { doc, _ ->
+            if (doc != null) {
+                trySend(runCatching { doc.toObject(col.type)?.let { col.withId(it, doc.id) } }.getOrNull())
+            }
+        }
+        awaitClose { registration.remove() }
+    }
+
     override fun <T : Any> save(col: Col<T>, items: List<T>) {
         if (items.isEmpty()) return
         val batch = db.batch()

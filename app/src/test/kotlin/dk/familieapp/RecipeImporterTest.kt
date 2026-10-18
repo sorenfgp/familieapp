@@ -76,10 +76,11 @@ class RecipeImporterTest {
     @Test
     fun guessesDessertFromCategory() {
         val dessert = RecipeImporter.parseJsonLd(
-            listOf("""{"@type":"Recipe","name":"Chokoladekage","recipeCategory":"Dessert"}"""),
+            listOf("""{"@type":"Recipe","name":"Chokoladekage","recipeCategory":"Dessert","image":[{"@type":"ImageObject","url":"https://example.com/kage.jpg"}]}"""),
             "https://example.com/kage",
         )!!
         assertEquals(dk.familieapp.data.KIND_DESSERT, dessert.kind)
+        assertEquals("https://example.com/kage.jpg", dessert.imageUrl)
         val dinner = RecipeImporter.parseJsonLd(
             listOf("""{"@type":"Recipe","name":"Kylling i karry","recipeCategory":"Aftensmad"}"""),
             "https://example.com/karry",

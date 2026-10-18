@@ -68,7 +68,16 @@ object RecipeImporter {
             steps = steps(node["recipeInstructions"]),
             sourceUrl = url,
             kind = guessKind(node),
+            imageUrl = imageOf(node["image"]).orEmpty(),
         )
+    }
+
+    /** schema.org-billede: en adresse, en liste eller et ImageObject med "url". */
+    private fun imageOf(element: JsonElement?): String? = when (element) {
+        is JsonPrimitive -> element.content.takeIf { it.startsWith("http") }
+        is JsonArray -> element.firstNotNullOfOrNull { imageOf(it) }
+        is JsonObject -> imageOf(element["url"]) ?: imageOf(element["contentUrl"])
+        else -> null
     }
 
     private fun minutes(element: JsonElement?): Int? {

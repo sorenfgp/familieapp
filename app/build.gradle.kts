@@ -20,8 +20,8 @@ android {
         applicationId = "dk.familieapp"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "0.17"
+        versionCode = 18
+        versionName = "0.18"
     }
 
     signingConfigs {
@@ -74,6 +74,7 @@ dependencies {
 
     implementation("org.jsoup:jsoup:1.17.2")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
 
     testImplementation("junit:junit:4.13.2")
 }

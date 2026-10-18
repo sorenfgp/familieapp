@@ -40,6 +40,15 @@ import dk.familieapp.data.ROLE_PARENT
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import kotlinx.coroutines.launch
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.core.content.FileProvider
+import dk.familieapp.data.RecipeImages
 import java.time.LocalDate
 
 // ---------- Vis opskrift ----------
@@ -88,6 +97,7 @@ fun RecipeDetailScreen(vm: AppViewModel, id: String, nav: NavController) {
                     .padding(horizontal = 20.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                RecipePhoto(vm, recipe.id)
                 Text(recipe.name, fontSize = 30.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold)
                 Text(meta, fontSize = 14.sp, color = Muted)
                 if (isParent) Button(
@@ -227,15 +237,18 @@ fun RecipeEditScreen(vm: AppViewModel, id: String, nav: NavController) {
         return
     }
 
+    val savedImage by remember(id) { vm.recipeImage(id) }.collectAsStateWithLifecycle(null)
     RecipeForm(
         initial = source,
+        initialImage = savedImage?.data,
         isNew = isNew,
         onCancel = {
             vm.draft = null
             nav.popBackStack()
         },
-        onSave = { recipe ->
+        onSave = { recipe, image, imageChanged ->
             val savedId = vm.saveRecipe(recipe)
+            if (imageChanged) vm.saveRecipeImage(savedId, image)
             vm.draft = null
             vm.mealTab = 1
             if (isNew) {
@@ -256,9 +269,10 @@ fun RecipeEditScreen(vm: AppViewModel, id: String, nav: NavController) {
 @Composable
 private fun RecipeForm(
     initial: Recipe,
+    initialImage: String?,
     isNew: Boolean,
     onCancel: () -> Unit,
-    onSave: (Recipe) -> Unit,
+    onSave: (Recipe, image: String?, imageChanged: Boolean) -> Unit,
     onDelete: () -> Unit,
 ) {
     // rememberSaveable: det skrevne overlever, når skærmen vendes eller appen lægges i baggrunden.
@@ -273,6 +287,19 @@ private fun RecipeForm(
         mutableStateListOf<String>().apply { addAll(initial.steps) }
     }
     var confirmDelete by remember { mutableStateOf(false) }
+    // Billedet: det gemte, et importeret eller et nyt fra kamera/galleri.
+    var image by remember { mutableStateOf<String?>(null) }
+    var imageChanged by remember { mutableStateOf(false) }
+    LaunchedEffect(initialImage) { if (!imageChanged) image = initialImage }
+    LaunchedEffect(initial.imageUrl) {
+        // Importeret opskrift: hent sidens billede med det samme.
+        if (isNew && initial.imageUrl.isNotBlank() && image == null) {
+            RecipeImages.fromUrl(initial.imageUrl)?.let {
+                image = it
+                imageChanged = true
+            }
+        }
+    }
     // Rækken, hvis felt skal have fokus efter næste tegning (-1 = ingen).
     var focusIngredient by remember { mutableIntStateOf(-1) }
     var focusStep by remember { mutableIntStateOf(-1) }
@@ -302,7 +329,9 @@ private fun RecipeForm(
                                 .filter { it.name.isNotBlank() }
                                 .map { Ingredient(it.name.trim(), it.amount.trim()) },
                             steps = steps.map { it.trim() }.filter { it.isNotBlank() },
-                        )
+                        ),
+                        image,
+                        imageChanged,
                     )
                 },
                 enabled = name.isNotBlank(),
@@ -318,6 +347,10 @@ private fun RecipeForm(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(heading, fontSize = 30.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold)
+            PhotoPicker(image) { newImage ->
+                image = newImage
+                imageChanged = true
+            }
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
@@ -582,6 +615,80 @@ fun ImportScreen(vm: AppViewModel, initialUrl: String, nav: NavController) {
                     lineHeight = 20.sp,
                 )
             }
+        }
+    }
+}
+
+// ---------- Billede af retten ----------
+
+@Composable
+private fun RecipePhoto(vm: AppViewModel, recipeId: String) {
+    val stored by remember(recipeId) { vm.recipeImage(recipeId) }.collectAsStateWithLifecycle(null)
+    val bitmap = remember(stored?.data) { stored?.data?.let { RecipeImages.decode(it)?.asImageBitmap() } }
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = "Billede af retten",
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(4f / 3f)
+                .clip(RoundedCornerShape(20.dp)),
+            contentScale = ContentScale.Crop,
+        )
+    }
+}
+
+/** Viser billedet og knapper til at tage et nyt, vælge et fra galleriet eller fjerne det. */
+@Composable
+private fun PhotoPicker(image: String?, onChange: (String?) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    val photoUri = remember {
+        val dir = java.io.File(context.cacheDir, "images").apply { mkdirs() }
+        FileProvider.getUriForFile(context, context.packageName + ".fileprovider", java.io.File(dir, "ret.jpg"))
+    }
+
+    fun load(uri: Uri) {
+        busy = true
+        scope.launch {
+            val data = RecipeImages.fromUri(context, uri)
+            busy = false
+            if (data != null) onChange(data) else context.toast("Billedet kunne ikke bruges")
+        }
+    }
+
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        if (ok) load(photoUri)
+    }
+    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) load(uri)
+    }
+
+    val bitmap = remember(image) { image?.let { RecipeImages.decode(it)?.asImageBitmap() } }
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = "Billede af retten",
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(4f / 3f)
+                .clip(RoundedCornerShape(20.dp)),
+            contentScale = ContentScale.Crop,
+        )
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        OutlinedButton(onClick = { camera.launch(photoUri) }, enabled = !busy) {
+            Text(if (bitmap == null) "Tag billede" else "Nyt billede")
+        }
+        OutlinedButton(
+            onClick = { gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+            enabled = !busy,
+        ) { Text("Vælg billede") }
+        if (busy) {
+            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+        } else if (bitmap != null) {
+            TextButton(onClick = { onChange(null) }) { Text("Fjern") }
         }
     }
 }

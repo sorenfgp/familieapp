@@ -36,6 +36,12 @@ class LocalStore(private val file: File) : FamilyStore {
         }
     }
 
+    override fun <T : Any> observeOne(col: Col<T>, id: String): Flow<T?> = state.map { all ->
+        all[col.name]?.get(id)?.let { element ->
+            runCatching { col.withId(json.decodeFromJsonElement(col.serializer, element), id) }.getOrNull()
+        }
+    }
+
     override fun <T : Any> save(col: Col<T>, items: List<T>) {
         if (items.isEmpty()) return
         update(col.name) { docs ->

@@ -25,6 +25,7 @@ object Cols {
     val calendarEvents = Col("calendarEvents", MirroredEvent::class.java, MirroredEvent.serializer(), { it.id }, { e, id -> e.copy(id = id) })
     val categoryOverrides = Col("categoryOverrides", CategoryOverride::class.java, CategoryOverride.serializer(), { it.id }, { o, id -> o.copy(id = id) })
     val calendarRequests = Col("calendarRequests", CalendarRequest::class.java, CalendarRequest.serializer(), { it.id }, { r, id -> r.copy(id = id) })
+    val recipeImages = Col("recipeImages", RecipeImage::class.java, RecipeImage.serializer(), { it.id }, { i, id -> i.copy(id = id) })
     val calendarSync = Col("calendarSync", CalendarSyncInfo::class.java, CalendarSyncInfo.serializer(), { it.id }, { s, id -> s.copy(id = id) })
 }
 
@@ -34,6 +35,8 @@ object Cols {
  */
 interface FamilyStore {
     fun <T : Any> observe(col: Col<T>): Flow<List<T>>
+    /** Ét dokument. Bruges til store dokumenter som billeder, så hele samlingen ikke hentes. */
+    fun <T : Any> observeOne(col: Col<T>, id: String): Flow<T?>
     fun <T : Any> save(col: Col<T>, items: List<T>)
     fun <T : Any> delete(col: Col<T>, ids: List<String>)
 

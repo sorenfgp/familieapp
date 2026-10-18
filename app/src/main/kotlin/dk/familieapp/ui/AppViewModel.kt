@@ -46,6 +46,8 @@ import dk.familieapp.data.PlannedMeal
 import dk.familieapp.data.Profile
 import dk.familieapp.data.ROLE_PARENT
 import dk.familieapp.data.Recipe
+import dk.familieapp.data.RecipeImage
+import kotlinx.coroutines.flow.Flow
 import dk.familieapp.data.Session
 import dk.familieapp.data.ShoppingItem
 import dk.familieapp.data.ShoppingMerge
@@ -196,6 +198,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteRecipe(id: String) {
         _store.value?.delete(Cols.recipes, listOf(id))
+        _store.value?.delete(Cols.recipeImages, listOf(id))
+    }
+
+    /** Billedet af en opskrift, eller null hvis den ikke har et. */
+    fun recipeImage(id: String): Flow<RecipeImage?> =
+        _store.flatMapLatest { s -> if (s == null || id.isBlank()) flowOf(null) else s.observeOne(Cols.recipeImages, id) }
+
+    /** Gemmer eller fjerner (null) billedet af en opskrift. */
+    fun saveRecipeImage(id: String, data: String?) {
+        val store = _store.value ?: return
+        if (data == null) store.delete(Cols.recipeImages, listOf(id)) else store.save(Cols.recipeImages, listOf(RecipeImage(id, data)))
     }
 
     // ---- Madplan ----
