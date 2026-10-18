@@ -1,6 +1,9 @@
 package dk.familieapp.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -121,7 +124,23 @@ fun TodayScreen(vm: AppViewModel, nav: NavController) {
                 ) {
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("Aftensmad i dag", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFCFE5D8))
-                        Text(if (todaysMeals.isEmpty()) "Ikke planlagt" else todaysMeals.joinToString(" · ") { it.title }, fontSize = 26.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold)
+                        if (todaysMeals.isEmpty()) {
+                            Text("Ikke planlagt", fontSize = 26.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold)
+                        }
+                        // Hver ret står for sig. En ret med opskrift åbner opskriften ved tryk.
+                        todaysMeals.forEach { meal ->
+                            val hasRecipe = meal.recipeId.isNotBlank()
+                            Text(
+                                meal.title,
+                                Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable(enabled = hasRecipe) { nav.navigate("recipe/${meal.recipeId}") },
+                                fontSize = 26.sp,
+                                lineHeight = 30.sp,
+                                fontWeight = FontWeight.Bold,
+                                textDecoration = if (hasRecipe) TextDecoration.Underline else null,
+                            )
+                        }
                         if (cook.isNotBlank()) {
                             Text("$cook laver mad", fontSize = 15.sp, color = Color(0xFFE6F1EA))
                         }

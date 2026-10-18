@@ -12,6 +12,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -78,7 +80,7 @@ fun MealPlanScreen(vm: AppViewModel, nav: NavController) {
             modifier = Modifier.padding(horizontal = 20.dp),
         )
         when (vm.mealTab) {
-            0 -> WeekPlan(vm, meals, recipes, start, today, Modifier.weight(1f))
+            0 -> WeekPlan(vm, meals, recipes, start, today, Modifier.weight(1f), nav)
             2 -> OfferSuggestions(vm, nav, Modifier.weight(1f))
             else -> RecipeList(vm, meals, recipes, nav, Modifier.weight(1f))
         }
@@ -93,6 +95,7 @@ private fun WeekPlan(
     start: LocalDate,
     today: LocalDate,
     modifier: Modifier,
+    nav: NavController,
 ) {
     val context = LocalContext.current
     val me by vm.me.collectAsStateWithLifecycle()
@@ -114,6 +117,7 @@ private fun WeekPlan(
                 editable = editable,
                 onEdit = { editing = it },
                 onAdd = { editing = PlannedMeal(date = date.toString()) },
+                onOpenRecipe = { nav.navigate("recipe/$it") },
             )
         }
         if (editable) item {
@@ -158,6 +162,7 @@ private fun DayCard(
     editable: Boolean,
     onEdit: (PlannedMeal) -> Unit,
     onAdd: () -> Unit,
+    onOpenRecipe: (String) -> Unit,
 ) {
     val background = if (isToday) Green else Color.White
     val textColor = if (isToday) Color.White else Ink
@@ -183,16 +188,33 @@ private fun DayCard(
                     Text("Ikke planlagt", Modifier.padding(vertical = 6.dp), fontSize = 15.sp, color = subColor)
                 }
                 meals.forEach { meal ->
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable(enabled = editable) { onEdit(meal) }
-                            .padding(vertical = 6.dp),
-                    ) {
-                        Text(meal.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = textColor)
-                        if (meal.cook.isNotBlank()) {
-                            Text("${meal.cook} laver mad", fontSize = 13.sp, color = subColor)
+                    val hasRecipe = meal.recipeId.isNotBlank()
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Tryk på en ret med opskrift åbner opskriften. Uden opskrift kan forældre rette retten.
+                        Column(
+                            Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable(enabled = hasRecipe || editable) {
+                                    if (hasRecipe) onOpenRecipe(meal.recipeId) else onEdit(meal)
+                                }
+                                .padding(vertical = 6.dp),
+                        ) {
+                            Text(
+                                meal.title,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = textColor,
+                                textDecoration = if (hasRecipe) TextDecoration.Underline else null,
+                            )
+                            if (meal.cook.isNotBlank()) {
+                                Text("${meal.cook} laver mad", fontSize = 13.sp, color = subColor)
+                            }
+                        }
+                        if (editable) {
+                            IconButton(onClick = { onEdit(meal) }) {
+                                Icon(Icons.Filled.Edit, contentDescription = "Ret ${meal.title}", tint = subColor)
+                            }
                         }
                     }
                 }
