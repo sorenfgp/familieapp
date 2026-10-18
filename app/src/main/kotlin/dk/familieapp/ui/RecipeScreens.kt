@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package dk.familieapp.ui
 
 import androidx.compose.foundation.background
@@ -658,6 +660,27 @@ private fun PhotoPicker(image: String?, onChange: (String?) -> Unit) {
         }
     }
 
+    /** Indsætter et billede (eller et link til et billede) fra udklipsholderen. */
+    fun paste() {
+        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        val clip = clipboard.primaryClip
+        val item = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
+        val uri = item?.uri
+        val text = item?.coerceToText(context)?.toString()?.trim().orEmpty()
+        when {
+            uri != null -> load(uri)
+            text.startsWith("http") -> {
+                busy = true
+                scope.launch {
+                    val data = RecipeImages.fromUrl(text)
+                    busy = false
+                    if (data != null) onChange(data) else context.toast("Linket i udklipsholderen er ikke et billede")
+                }
+            }
+            else -> context.toast("Der er ikke noget billede i udklipsholderen")
+        }
+    }
+
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         if (ok) load(photoUri)
     }
@@ -677,7 +700,10 @@ private fun PhotoPicker(image: String?, onChange: (String?) -> Unit) {
             contentScale = ContentScale.Crop,
         )
     }
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    FlowRow(
+        verticalArrangement = Arrangement.Center,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
         OutlinedButton(onClick = { camera.launch(photoUri) }, enabled = !busy) {
             Text(if (bitmap == null) "Tag billede" else "Nyt billede")
         }
@@ -685,6 +711,7 @@ private fun PhotoPicker(image: String?, onChange: (String?) -> Unit) {
             onClick = { gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
             enabled = !busy,
         ) { Text("Vælg billede") }
+        OutlinedButton(onClick = { paste() }, enabled = !busy) { Text("Indsæt") }
         if (busy) {
             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
         } else if (bitmap != null) {
