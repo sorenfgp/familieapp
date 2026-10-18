@@ -27,6 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import dk.familieapp.data.CHORE_APPROVED
 import dk.familieapp.data.CHORE_DONE
+import dk.familieapp.data.CHORE_MISSED
 import dk.familieapp.data.CHORE_OPEN
 import dk.familieapp.data.ChoreEntry
 import dk.familieapp.data.ChorePlan
@@ -227,6 +228,7 @@ private fun ChoreRow(vm: AppViewModel, entry: ChoreEntry, profiles: List<Profile
     val isParent = me?.role == ROLE_PARENT
     val child = profiles.firstOrNull { it.id == entry.childId }
     val childName = child?.name ?: "?"
+    val missed = entry.status == CHORE_MISSED
     val status = when (entry.status) {
         CHORE_DONE -> "Udført af ${profiles.nameOf(entry.doneBy)} · venter på bekræftelse"
         CHORE_APPROVED -> if (entry.doneBy.isNotBlank()) {
@@ -234,53 +236,83 @@ private fun ChoreRow(vm: AppViewModel, entry: ChoreEntry, profiles: List<Profile
         } else {
             "Bekræftet af ${profiles.nameOf(entry.approvedBy)}"
         }
-        else -> if (isParent) "$childName · ikke udført" else "Ikke udført endnu"
+        CHORE_MISSED -> "Ikke udført · markeret af ${profiles.nameOf(entry.approvedBy)}"
+        else -> if (isParent) "$childName · ikke udført endnu" else "Ikke udført endnu"
     }
     val datePrefix = if (showDate) Dates.dayAbbr(LocalDate.parse(entry.date)) + " · " else ""
 
-    Row(
+    Column(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
-            .background(Color.White)
-            .padding(start = 14.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+            .background(if (missed) Color(0xFFFBEDE6) else Color.White)
+            .padding(start = 14.dp, end = 8.dp, top = 12.dp, bottom = if (isParent) 4.dp else 12.dp),
     ) {
-        Avatar(child, 36.dp)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(datePrefix + entry.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            if (entry.reward.isNotBlank()) {
-                Text("Belønning: ${entry.reward}", fontSize = 14.sp, color = Green, fontWeight = FontWeight.SemiBold)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Avatar(child, 36.dp)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(datePrefix + entry.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                if (entry.reward.isNotBlank()) {
+                    Text(
+                        if (missed) "Belønning: ${entry.reward} (ikke optjent)" else "Belønning: ${entry.reward}",
+                        fontSize = 14.sp,
+                        color = if (missed) Muted else Green,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                Text(
+                    status,
+                    fontSize = 13.sp,
+                    color = if (missed) Color(0xFF9A4A14) else Muted,
+                    fontWeight = if (missed) FontWeight.SemiBold else FontWeight.Normal,
+                )
             }
-            Text(status, fontSize = 13.sp, color = Muted)
+            if (!isParent && entry.childId == me?.id) {
+                when (entry.status) {
+                    CHORE_OPEN -> Button(
+                        onClick = { vm.markChoreDone(entry) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Yellow, contentColor = Ink),
+                    ) { Text("Udført", fontWeight = FontWeight.Bold) }
+                    CHORE_DONE -> TextButton(onClick = { vm.undoChoreDone(entry) }) { Text("Fortryd") }
+                    CHORE_APPROVED -> Icon(
+                        Icons.Filled.CheckCircle,
+                        contentDescription = "Bekræftet",
+                        tint = Green,
+                        modifier = Modifier.padding(10.dp),
+                    )
+                    else -> {}
+                }
+            }
         }
         if (isParent) {
-            when (entry.status) {
-                CHORE_DONE -> Button(onClick = { vm.approveChore(entry) }) { Text("Bekræft") }
-                CHORE_APPROVED -> TextButton(onClick = { vm.unapproveChore(entry) }) { Text("Fortryd") }
-                else -> {
-                    TextButton(onClick = { vm.approveChore(entry) }) { Text("Bekræft") }
-                    if (entry.templateId.isBlank()) {
-                        IconButton(onClick = { vm.deleteChore(entry.id) }) {
-                            Icon(Icons.Filled.Close, contentDescription = "Slet ${entry.title}", tint = Muted)
+            // Forældrenes knapper ligger under teksten, så der er plads til dem alle.
+            Row(
+                Modifier.padding(start = 48.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                when (entry.status) {
+                    CHORE_APPROVED, CHORE_MISSED ->
+                        TextButton(onClick = { vm.unapproveChore(entry) }) { Text("Fortryd") }
+                    else -> {
+                        TextButton(onClick = { vm.approveChore(entry) }) {
+                            Text(if (entry.status == CHORE_DONE) "Bekræft" else "Udført", fontWeight = FontWeight.Bold)
+                        }
+                        TextButton(
+                            onClick = { vm.markChoreMissed(entry) },
+                            colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF9A4A14)),
+                        ) { Text("Ikke udført", fontWeight = FontWeight.Bold) }
+                        Spacer(Modifier.weight(1f))
+                        if (entry.templateId.isBlank()) {
+                            IconButton(onClick = { vm.deleteChore(entry.id) }) {
+                                Icon(Icons.Filled.Close, contentDescription = "Slet ${entry.title}", tint = Muted)
+                            }
                         }
                     }
                 }
-            }
-        } else if (entry.childId == me?.id) {
-            when (entry.status) {
-                CHORE_OPEN -> Button(
-                    onClick = { vm.markChoreDone(entry) },
-                    colors = ButtonDefaults.buttonColors(containerColor = Yellow, contentColor = Ink),
-                ) { Text("Udført", fontWeight = FontWeight.Bold) }
-                CHORE_DONE -> TextButton(onClick = { vm.undoChoreDone(entry) }) { Text("Fortryd") }
-                else -> Icon(
-                    Icons.Filled.CheckCircle,
-                    contentDescription = "Bekræftet",
-                    tint = Green,
-                    modifier = Modifier.padding(10.dp),
-                )
             }
         }
     }

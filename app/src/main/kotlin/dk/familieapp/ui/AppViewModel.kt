@@ -29,6 +29,7 @@ import dk.familieapp.data.MirroredEvent
 import kotlinx.coroutines.launch
 import dk.familieapp.data.CHORE_APPROVED
 import dk.familieapp.data.CHORE_DONE
+import dk.familieapp.data.CHORE_MISSED
 import dk.familieapp.data.CHORE_OPEN
 import dk.familieapp.data.Categories
 import dk.familieapp.data.ChoreEntry
@@ -509,5 +510,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (!isParent) return
         val status = if (entry.doneBy.isNotBlank()) CHORE_DONE else CHORE_OPEN
         put(Cols.chores, entry.copy(status = status, approvedBy = "", approvedAt = 0))
+    }
+
+    /** En forælder markerer, at pligten ikke blev udført, også hvis barnet har meldt den udført. */
+    fun markChoreMissed(entry: ChoreEntry) {
+        if (!isParent) return
+        put(Cols.chores, entry.copy(status = CHORE_MISSED, approvedBy = myId, approvedAt = now()))
     }
 }

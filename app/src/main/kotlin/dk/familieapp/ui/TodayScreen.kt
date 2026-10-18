@@ -159,7 +159,8 @@ fun TodayScreen(vm: AppViewModel, nav: NavController) {
                                     val state = when (entry.status) {
                                         CHORE_APPROVED -> "bekræftet"
                                         CHORE_DONE -> "venter på bekræftelse"
-                                        else -> "ikke udført"
+                                        dk.familieapp.data.CHORE_MISSED -> "ikke udført"
+                                        else -> "ikke udført endnu"
                                     }
                                     Text("${entry.title} · $state", fontSize = 15.sp)
                                 }

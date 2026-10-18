@@ -14,6 +14,8 @@ const val ROLE_CHILD = "child"
 const val CHORE_OPEN = "open"
 const val CHORE_DONE = "done"
 const val CHORE_APPROVED = "approved"
+/** En forælder har markeret, at pligten ikke blev udført. [ChoreEntry.approvedBy] er hvem der markerede. */
+const val CHORE_MISSED = "missed"
 
 @Serializable
 data class Ingredient(
