@@ -288,6 +288,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { weather = runCatching { WeatherService.hillerod() } }
     }
 
+    var matches by mutableStateOf<Result<List<dk.familieapp.data.Match>>?>(null)
+        private set
+    private var matchesAt = 0L
+
+    /** Henter landsholdets kommende kampe højst hver 6. time. */
+    fun loadMatches(force: Boolean = false) {
+        if (!force && now() - matchesAt < 6 * 60 * 60 * 1000L && matches?.isSuccess == true) return
+        matchesAt = now()
+        viewModelScope.launch { matches = runCatching { dk.familieapp.data.Football.upcoming() } }
+    }
+
     var train by mutableStateOf<Result<TrainStatus>?>(null)
         private set
     private var trainAt = 0L

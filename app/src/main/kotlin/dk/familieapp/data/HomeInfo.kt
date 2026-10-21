@@ -29,6 +29,7 @@ object HomeCards {
     const val CHORES = "chores"
     const val SHOPPING = "shopping"
     const val CALENDAR = "calendar"
+    const val FOOTBALL = "football"
 
     /** I den rækkefølge, de vises på forsiden. */
     val all = listOf(
@@ -38,6 +39,7 @@ object HomeCards {
         CHORES to "Pligter",
         SHOPPING to "Indkøbsliste",
         CALENDAR to "I dag i kalenderen",
+        FOOTBALL to "Herrelandsholdets kampe",
     )
 
     /** Toget er fra, indtil profilen selv slår det til. */
@@ -255,5 +257,79 @@ object Rejseplanen {
                 )
             }
             .sortedBy { it.planned }
+    }
+}
+
+// ---------- Herrelandsholdet i fodbold (ESPN, kræver ingen nøgle) ----------
+
+data class Match(
+    val kickoff: java.time.ZonedDateTime,
+    val opponent: String,
+    val home: Boolean,
+    val competition: String,
+    val city: String,
+)
+
+/**
+ * Kommende landskampe for Danmarks herrelandshold fra ESPN's åbne (men udokumenterede) API.
+ * Danmark har id 479 hos ESPN.
+ */
+object Football {
+    private const val URL =
+        "https://site.api.espn.com/apis/site/v2/sports/soccer/all/teams/479/schedule?fixture=true"
+
+    private val danishNames = mapOf(
+        "Norway" to "Norge", "Sweden" to "Sverige", "Finland" to "Finland", "Iceland" to "Island",
+        "Germany" to "Tyskland", "Netherlands" to "Holland", "Belgium" to "Belgien", "France" to "Frankrig",
+        "Spain" to "Spanien", "Portugal" to "Portugal", "Italy" to "Italien", "England" to "England",
+        "Scotland" to "Skotland", "Wales" to "Wales", "Northern Ireland" to "Nordirland",
+        "Republic of Ireland" to "Irland", "Ireland" to "Irland", "Switzerland" to "Schweiz",
+        "Austria" to "Østrig", "Poland" to "Polen", "Czechia" to "Tjekkiet", "Czech Republic" to "Tjekkiet",
+        "Croatia" to "Kroatien", "Serbia" to "Serbien", "Slovenia" to "Slovenien", "Slovakia" to "Slovakiet",
+        "Hungary" to "Ungarn", "Romania" to "Rumænien", "Greece" to "Grækenland", "Turkey" to "Tyrkiet",
+        "Türkiye" to "Tyrkiet", "Ukraine" to "Ukraine", "Belarus" to "Hviderusland", "Faroe Islands" to "Færøerne",
+        "Bosnia-Herzegovina" to "Bosnien-Hercegovina", "North Macedonia" to "Nordmakedonien",
+        "Kazakhstan" to "Kasakhstan", "Lithuania" to "Litauen", "Latvia" to "Letland", "Estonia" to "Estland",
+        "Georgia" to "Georgien", "Albania" to "Albanien", "Montenegro" to "Montenegro", "Kosovo" to "Kosovo",
+        "Cyprus" to "Cypern", "Israel" to "Israel", "Luxembourg" to "Luxembourg", "Malta" to "Malta",
+        "United States" to "USA", "USA" to "USA", "Mexico" to "Mexico", "Brazil" to "Brasilien",
+        "Argentina" to "Argentina", "Morocco" to "Marokko", "Japan" to "Japan", "South Korea" to "Sydkorea",
+    )
+
+    fun danish(name: String): String = danishNames[name] ?: name
+
+    suspend fun upcoming(): List<Match> = withContext(Dispatchers.IO) { parse(httpGet(URL), java.time.Instant.now()) }
+
+    /** Kampe fra [now] og frem (en igangværende kamp tæller med de første tre timer). */
+    fun parse(text: String, now: java.time.Instant): List<Match> {
+        val zone = java.time.ZoneId.of("Europe/Copenhagen")
+        val events = (json.parseToJsonElement(text).jsonObject["events"] as? JsonArray).orEmpty()
+        return events.mapNotNull { e ->
+            val event = e as? JsonObject ?: return@mapNotNull null
+            val date = (event["date"] as? JsonPrimitive)?.content ?: return@mapNotNull null
+            // ESPN skriver fx "2026-11-14T19:45Z" uden sekunder.
+            val instant = runCatching { java.time.OffsetDateTime.parse(date).toInstant() }.getOrNull()
+                ?: return@mapNotNull null
+            if (instant.isBefore(now.minus(Duration.ofHours(3)))) return@mapNotNull null
+            val competition = (event["competitions"] as? JsonArray)?.firstOrNull() as? JsonObject
+            val competitors = (competition?.get("competitors") as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
+            fun teamName(c: JsonObject): String =
+                ((c["team"] as? JsonObject)?.get("displayName") as? JsonPrimitive)?.content.orEmpty()
+            val denmark = competitors.firstOrNull { teamName(it) == "Denmark" }
+            val other = competitors.firstOrNull { it !== denmark } ?: return@mapNotNull null
+            val home = (denmark?.get("homeAway") as? JsonPrimitive)?.content == "home"
+            val league = ((event["league"] as? JsonObject)?.get("name") as? JsonPrimitive)?.content
+                ?: ((event["season"] as? JsonObject)?.get("displayName") as? JsonPrimitive)?.content
+                ?: ""
+            val city = ((competition?.get("venue") as? JsonObject)?.get("address") as? JsonObject)
+                ?.get("city")?.let { (it as? JsonPrimitive)?.content }.orEmpty()
+            Match(
+                kickoff = instant.atZone(zone),
+                opponent = danish(teamName(other)),
+                home = home,
+                competition = league.replace("International Friendly", "Venskabskamp").replace("Friendly", "Venskabskamp"),
+                city = city,
+            )
+        }.sortedBy { it.kickoff }
     }
 }

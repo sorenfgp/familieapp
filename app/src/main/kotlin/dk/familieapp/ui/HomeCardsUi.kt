@@ -162,3 +162,42 @@ private fun DepartureLine(label: String, departures: List<TrainDeparture>) {
         }
     }
 }
+
+/** Herrelandsholdets kommende landskampe. */
+@Composable
+fun FootballCard(vm: AppViewModel, refresh: Int) {
+    LaunchedEffect(refresh) { vm.loadMatches() }
+    val result = vm.matches
+    val matchClock = DateTimeFormatter.ofPattern("HH.mm")
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), color = Color.White) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Herrelandsholdet", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            val matches = result?.getOrNull()
+            when {
+                matches != null && matches.isEmpty() ->
+                    Text("Ingen kampe er sat på programmet endnu.", fontSize = 15.sp, color = Muted)
+                matches != null -> matches.take(4).forEach { m ->
+                    val date = m.kickoff.toLocalDate()
+                    Column {
+                        Text(
+                            if (m.home) "Danmark – ${m.opponent}" else "${m.opponent} – Danmark",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            listOf(
+                                "${dk.familieapp.data.Dates.dayAbbr(date)} ${dk.familieapp.data.Dates.short(date)} kl. ${matchClock.format(m.kickoff)}",
+                                if (m.home) "hjemme" else "ude",
+                                m.competition,
+                            ).filter { it.isNotBlank() }.joinToString(" · "),
+                            fontSize = 13.sp,
+                            color = Muted,
+                        )
+                    }
+                }
+                result == null -> Text("Henter kampprogrammet …", fontSize = 15.sp, color = Muted)
+                else -> Text("Kampprogrammet kunne ikke hentes.", fontSize = 15.sp, color = Muted)
+            }
+        }
+    }
+}

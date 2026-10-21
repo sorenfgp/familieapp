@@ -113,6 +113,9 @@ fun TodayScreen(vm: AppViewModel, nav: NavController) {
             blocks[HomeCards.TRAIN] = {
                 TrainCard(vm, refresh, onSetup = { nav.navigate("family") })
             }
+            blocks[HomeCards.FOOTBALL] = {
+                FootballCard(vm, refresh)
+            }
 
             blocks[HomeCards.DINNER] = {
                 // Aftensmad
