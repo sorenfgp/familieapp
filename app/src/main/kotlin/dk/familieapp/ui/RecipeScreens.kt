@@ -42,6 +42,10 @@ import dk.familieapp.data.ROLE_PARENT
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import kotlinx.coroutines.launch
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import dk.familieapp.data.StepAmounts
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -167,7 +171,17 @@ fun RecipeDetailScreen(vm: AppViewModel, id: String, nav: NavController) {
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
                                     StepNumber(index + 1)
-                                    Text(step, Modifier.weight(1f), fontSize = 15.sp, lineHeight = 21.sp)
+                                    // Mængderne sættes i parentes efter hver ingrediens, der nævnes.
+                                    val text = buildAnnotatedString {
+                                        StepAmounts.annotate(step, recipe.ingredients).forEach { part ->
+                                            if (part.amount) {
+                                                withStyle(SpanStyle(color = Green, fontWeight = FontWeight.SemiBold)) { append(part.text) }
+                                            } else {
+                                                append(part.text)
+                                            }
+                                        }
+                                    }
+                                    Text(text, Modifier.weight(1f), fontSize = 15.sp, lineHeight = 21.sp)
                                 }
                             }
                         }
