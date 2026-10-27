@@ -494,34 +494,6 @@ fun FamilyScreen(vm: AppViewModel, nav: NavController) {
             }
             Text("Pilene bestemmer rækkefølgen på forsiden. Valget gælder kun din profil.", fontSize = 13.sp, color = Muted)
 
-            if (isParent) {
-                SectionLabel("S-tog (Rejseplanen)")
-                var rejseplanenKey by remember(settings?.rejseplanenKey) {
-                    mutableStateOf(settings?.rejseplanenKey.orEmpty())
-                }
-                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), color = Color.White) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            "Kortet med linje A kræver en gratis nøgle til Rejseplanens API. Ansøg som privat " +
-                                "bruger på labs.rejseplanen.dk, og indsæt nøglen her. Den gælder for hele familien.",
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp,
-                            color = Muted,
-                        )
-                        OutlinedTextField(
-                            value = rejseplanenKey,
-                            onValueChange = { rejseplanenKey = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Nøgle (accessId)") },
-                            singleLine = true,
-                        )
-                        if (rejseplanenKey.trim() != settings?.rejseplanenKey.orEmpty()) {
-                            Button(onClick = { vm.setRejseplanenKey(rejseplanenKey) }) { Text("Gem nøgle") }
-                        }
-                    }
-                }
-            }
-
             SectionLabel("Familiekalender")
             Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), color = Color.White) {
                 Text(

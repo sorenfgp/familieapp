@@ -113,7 +113,7 @@ data class FamilySettings(
     val calendarName: String = "",
     /** "text" i dag. Senere evt. "points" eller "money". */
     val rewardMode: String = "text",
-    /** Nøgle til Rejseplanens API, så forsiden kan vise S-togets afgange. */
+    /** Ubrugt siden 0.23 (S-toget hentes nu fra mittog.dk). Bevares, så gemte data kan læses. */
     val rejseplanenKey: String = "",
     /** Butikker, der indgår i tilbudsforslagene. Gælder hele familien. */
     val offerStores: List<String> = Offers.STORES,

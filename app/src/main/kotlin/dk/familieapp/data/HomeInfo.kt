@@ -157,7 +157,7 @@ object WeatherService {
     }
 }
 
-// ---------- S-tog (Rejseplanen, kræver en gratis nøgle) ----------
+// ---------- S-tog (mittog.dk, kræver ingen nøgle) ----------
 
 data class TrainDeparture(
     val planned: LocalDateTime,
@@ -165,6 +165,8 @@ data class TrainDeparture(
     val direction: String,
     val cancelled: Boolean,
     val track: String,
+    /** Stationskoder, toget kører til herfra, endestationen medregnet. */
+    val stops: List<String> = emptyList(),
 ) {
     val delayMinutes: Int
         get() = expected?.let { Duration.between(planned, it).toMinutes().toInt() }?.coerceAtLeast(0) ?: 0
@@ -174,89 +176,145 @@ data class TrainDeparture(
 data class TrainStatus(
     val towardsCity: List<TrainDeparture>,
     val towardsHillerod: List<TrainDeparture>,
+    /** Driftsmeddelelser fra DSB for de to stationer. */
+    val notices: List<String> = emptyList(),
 )
 
-object Rejseplanen {
-    private const val BASE = "https://www.rejseplanen.dk/api/"
-    const val FAVRHOLM = "Favrholm St."
-    const val NORREPORT = "Nørreport St."
+data class TrainBoard(val departures: List<TrainDeparture>, val notices: List<String>)
 
-    private fun encode(text: String) = URLEncoder.encode(text, "UTF-8")
+/**
+ * Live afgangstavler fra mittog.dk, som viser DSB's og Banedanmarks egne afgangsdata.
+ * Der er ingen nøgle og intet officielt API: hjemmesiden åbner en WebSocket pr. station,
+ * og serveren sender hele tavlen som JSON. Appen tager den første tavle og lukker igen.
+ * Kan holde op med at virke, hvis mittog.dk ændrer sit format.
+ */
+object MitTog {
+    private const val WS = "wss://api.mittog.dk/api/ws/stog/departure/"
+    const val FAVRHOLM = "FVT"
+    const val NORREPORT = "KN"
+    const val HILLEROD = "HI"
 
-    /** Stoppestedets id, slået op på navn. */
-    suspend fun stopId(key: String, name: String): String = withContext(Dispatchers.IO) {
-        val text = httpGet("${BASE}location.name?accessId=${encode(key)}&input=${encode(name)}&type=S&format=json")
-        parseStopId(text) ?: error("Stationen $name blev ikke fundet")
-    }
-
-    suspend fun departures(key: String, stopId: String): List<TrainDeparture> = withContext(Dispatchers.IO) {
-        val text = httpGet(
-            "${BASE}departureBoard?accessId=${encode(key)}&id=${encode(stopId)}&format=json" +
-                "&useBus=0&useMetro=0&maxJourneys=40&duration=120"
-        )
-        parseDepartures(text, line = "A")
-    }
-
-    suspend fun status(key: String, favrholmId: String, norreportId: String): TrainStatus = TrainStatus(
-        towardsCity = departures(key, favrholmId).filterNot { it.direction.contains("Hillerød", ignoreCase = true) }.take(4),
-        towardsHillerod = departures(key, norreportId).filter { it.direction.contains("Hillerød", ignoreCase = true) }.take(4),
+    private val names = mapOf(
+        "HI" to "Hillerød", "FVT" to "Favrholm", "LI" to "Allerød", "BI" to "Birkerød", "HOT" to "Holte",
+        "LY" to "Lyngby", "HL" to "Hellerup", "SAM" to "Svanemøllen", "KK" to "Østerport", "KN" to "Nørreport",
+        "VPT" to "Vesterport", "KH" to "København H", "DBT" to "Dybbølsbro", "SYV" to "Sydhavn",
+        "NEL" to "København Syd", "UND" to "Hundige", "GRE" to "Greve", "KLU" to "Karlslunde",
+        "SOL" to "Solrød Strand", "JSI" to "Jersie", "KJN" to "Køge Nord", "KJ" to "Køge",
     )
 
-    /** Første StopLocation i svaret. Tåler både liste og enkelt objekt. */
-    fun parseStopId(text: String): String? {
-        fun find(element: JsonElement): String? = when (element) {
-            is JsonObject -> {
-                val stop = element["StopLocation"]
-                if (stop is JsonObject) {
-                    (stop["extId"] ?: stop["id"])?.jsonPrimitive?.content
-                } else {
-                    element.values.firstNotNullOfOrNull { find(it) }
+    fun name(code: String): String = names[code] ?: code
+
+    private val hiddenStopTypes = setOf("TechnicalStop", "CommercielDisembarcationOnly", "FinalDestination", "PassThrough")
+    private val timeFormat = java.time.format.DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss")
+
+    private val client by lazy {
+        okhttp3.OkHttpClient.Builder()
+            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
+
+    /** Den første tavle, serveren sender for [station]. */
+    suspend fun boardText(station: String): String = kotlinx.coroutines.withTimeout(20_000) {
+        kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+            val request = okhttp3.Request.Builder()
+                .url(WS + URLEncoder.encode(station, "UTF-8") + "/")
+                .header("Origin", "https://mittog.dk")
+                .header("User-Agent", "Familien-app")
+                .build()
+            val socket = client.newWebSocket(request, object : okhttp3.WebSocketListener() {
+                override fun onMessage(webSocket: okhttp3.WebSocket, text: String) {
+                    if (cont.isActive) cont.resumeWith(Result.success(text))
+                    webSocket.close(1000, null)
                 }
-            }
-            is JsonArray -> element.firstNotNullOfOrNull { find(it) }
-            else -> null
+
+                override fun onFailure(webSocket: okhttp3.WebSocket, t: Throwable, response: okhttp3.Response?) {
+                    if (cont.isActive) cont.resumeWith(Result.failure(t))
+                }
+
+                override fun onClosed(webSocket: okhttp3.WebSocket, code: Int, reason: String) {
+                    if (cont.isActive) cont.resumeWith(Result.failure(java.io.IOException("Forbindelsen blev lukket")))
+                }
+            })
+            cont.invokeOnCancellation { socket.cancel() }
         }
-        return find(json.parseToJsonElement(text))
+    }
+
+    suspend fun status(): TrainStatus = withContext(Dispatchers.IO) {
+        val favrholm = parseBoard(boardText(FAVRHOLM), FAVRHOLM)
+        val norreport = parseBoard(boardText(NORREPORT), NORREPORT)
+        TrainStatus(
+            // Favrholm ligger lige før endestationen, så alt der ikke kører mod Hillerød, kører mod byen.
+            towardsCity = favrholm.departures.filter { HILLEROD !in it.stops }.take(4),
+            towardsHillerod = norreport.departures.filter { FAVRHOLM in it.stops || HILLEROD in it.stops }.take(4),
+            notices = (favrholm.notices + norreport.notices).distinct(),
+        )
+    }
+
+    private fun parseTime(value: String?): LocalDateTime? {
+        if (value.isNullOrBlank() || value.startsWith("01-01-0001")) return null
+        return runCatching { LocalDateTime.parse(value, timeFormat) }.getOrNull()
+            ?: runCatching { java.time.OffsetDateTime.parse(value).atZoneSameInstant(java.time.ZoneId.of("Europe/Copenhagen")).toLocalDateTime() }.getOrNull()
+            ?: runCatching { LocalDateTime.parse(value) }.getOrNull()
     }
 
     private fun JsonObject.str(key: String): String? =
-        (this[key] as? JsonPrimitive)?.takeIf { it.isString || it.content.isNotBlank() }?.content
+        (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }
 
-    private fun lineOf(departure: JsonObject): String {
-        val products = listOfNotNull(departure["ProductAtStop"], departure["Product"]).flatMap {
-            when (it) {
-                is JsonArray -> it.mapNotNull { p -> p as? JsonObject }
-                is JsonObject -> listOf(it)
-                else -> emptyList()
-            }
-        }
-        val fromProduct = products.firstNotNullOfOrNull { p -> p.str("displayNumber") ?: p.str("line") }
-        return (fromProduct ?: departure.str("name") ?: "").trim().removePrefix("Linje ").trim()
-    }
+    private fun JsonObject.bool(key: String): Boolean? = (this[key] as? JsonPrimitive)?.booleanOrNull
 
-    /** Afgange på [line] fra et departureBoard-svar. */
-    fun parseDepartures(text: String, line: String): List<TrainDeparture> {
+    private fun JsonObject.objects(key: String): List<JsonObject> =
+        (this[key] as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
+
+    /**
+     * Afgange på [line] fra en tavle. Tog, der er kørt, ender her eller ikke tager passagerer,
+     * springes over, ligesom på mittog.dk.
+     */
+    fun parseBoard(
+        text: String,
+        station: String,
+        line: String = "A",
+        now: LocalDateTime = LocalDateTime.now(java.time.ZoneId.of("Europe/Copenhagen")),
+    ): TrainBoard {
         val root = json.parseToJsonElement(text).jsonObject
-        val list = when (val departures = root["Departure"]) {
-            is JsonArray -> departures.mapNotNull { it as? JsonObject }
-            is JsonObject -> listOf(departures)
-            else -> emptyList()
-        }
-        return list.filter { lineOf(it).equals(line, ignoreCase = true) || lineOf(it).endsWith(" $line") }
-            .mapNotNull { d ->
-                val date = d.str("date")?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return@mapNotNull null
-                val time = d.str("time")?.let { runCatching { LocalTime.parse(it) }.getOrNull() } ?: return@mapNotNull null
-                val rtTime = d.str("rtTime")?.let { runCatching { LocalTime.parse(it) }.getOrNull() }
-                val rtDate = d.str("rtDate")?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: date
-                TrainDeparture(
-                    planned = LocalDateTime.of(date, time),
-                    expected = rtTime?.let { LocalDateTime.of(rtDate, it) },
-                    direction = d.str("direction").orEmpty(),
-                    cancelled = (d["cancelled"] as? JsonPrimitive)?.booleanOrNull == true,
-                    track = d.str("rtTrack") ?: d.str("track") ?: "",
-                )
-            }
-            .sortedBy { it.planned }
+        val data = root["data"] as? JsonObject
+        val departures = data?.objects("Trains").orEmpty().mapNotNull { train ->
+            if (train.str("Product") != "STRAIN") return@mapNotNull null
+            if (!train.str("LineName").equals(line, ignoreCase = true)) return@mapNotNull null
+            if (train.str("TrainType").let { it != null && it != "Passenger" }) return@mapNotNull null
+            if (train.str("StopType") in hiddenStopTypes) return@mapNotNull null
+            if (train.bool("MayDepartEarly") == true || train.bool("IsLastStop") == true) return@mapNotNull null
+            if (train.str("InformationType").let { it != null && it != "NORMAL" }) return@mapNotNull null
+            if (parseTime(train.str("TrainDeparted")) != null) return@mapNotNull null
+
+            val planned = parseTime(train.str("ScheduleTimeDeparture")) ?: parseTime(train.str("ScheduleTime"))
+                ?: return@mapNotNull null
+            val expected = parseTime(train.str("EstimatedTimeDeparture")) ?: parseTime(train.str("DelayTime"))
+            if ((expected ?: planned).isBefore(now.minusSeconds(30))) return@mapNotNull null
+
+            val routes = train.objects("Routes")
+            val destinations = routes.mapNotNull { it.str("DestinationStationId") }.ifEmpty {
+                (train["TargetStation"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content }.orEmpty()
+            }.distinct()
+            if (destinations.isNotEmpty() && destinations.all { it == station }) return@mapNotNull null
+            val stops = (routes.flatMap { r -> r.objects("Stations").mapNotNull { it.str("StationId") } } + destinations)
+                .filter { it != station }
+                .distinct()
+
+            TrainDeparture(
+                planned = planned,
+                expected = expected,
+                direction = destinations.joinToString(" / ") { name(it) },
+                cancelled = train.bool("IsCancelledDeparture") ?: (train.bool("IsCancelled") == true),
+                track = train.str("TrackCurrent").orEmpty(),
+                stops = stops,
+            )
+        }.sortedBy { it.expected ?: it.planned }
+
+        val notices = (root["pico"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+            .filter { it.str("station_code").let { code -> code == null || code == station } }
+            .mapNotNull { it.str("header") }
+        return TrainBoard(departures, notices)
     }
 }
 

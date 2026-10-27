@@ -1,6 +1,6 @@
 package dk.familieapp
 
-import dk.familieapp.data.Rejseplanen
+import dk.familieapp.data.MitTog
 import dk.familieapp.data.WeatherService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -30,31 +30,55 @@ class HomeInfoTest {
         assertEquals(20, WeatherService.parse(text, nowHour = 18).rain!!.startHour)
     }
 
-    @Test
-    fun readsLineADeparturesWithDelayAndCancellation() {
-        val text = """
-            {"Departure":[
-              {"name":"A","type":"S","time":"07:41:00","date":"2026-10-13","rtTime":"07:45:00","rtDate":"2026-10-13",
-               "direction":"Hundige St.","track":"1","ProductAtStop":{"displayNumber":"A","catOut":"S"}},
-              {"name":"B","type":"S","time":"07:43:00","date":"2026-10-13","direction":"Høje Taastrup St.",
-               "ProductAtStop":{"displayNumber":"B"}},
-              {"name":"A","type":"S","time":"07:51:00","date":"2026-10-13","direction":"Hundige St.",
-               "cancelled":true,"ProductAtStop":{"displayNumber":"A"}}
-            ]}
+    private fun train(
+        line: String,
+        planned: String,
+        expected: String = planned,
+        destination: String,
+        stops: List<String>,
+        extra: String = "",
+    ): String {
+        val stations = stops.joinToString(",") { "{\"StationId\":\"$it\"}" }
+        return """
+        {"TrainId":"1","Product":"STRAIN","LineName":"$line",
+         "ScheduleTimeDeparture":"13-10-2026 $planned","EstimatedTimeDeparture":"13-10-2026 $expected",
+         "TrackCurrent":"2","TrainDeparted":"01-01-0001 00:00:00",$extra
+         "Routes":[{"DestinationStationId":"$destination",
+           "Stations":[$stations]}]}
         """.trimIndent()
-        val departures = Rejseplanen.parseDepartures(text, line = "A")
-        assertEquals(2, departures.size)
-        assertEquals(LocalDateTime.of(2026, 10, 13, 7, 41), departures[0].planned)
-        assertEquals(4, departures[0].delayMinutes)
-        assertTrue(departures[1].cancelled)
     }
 
     @Test
-    fun findsStopIdInListOrSingleObject() {
-        assertEquals(
-            "8600719",
-            Rejseplanen.parseStopId("""{"stopLocationOrCoordLocation":[{"StopLocation":{"name":"Favrholm St.","extId":"8600719"}}]}"""),
-        )
-        assertEquals("123", Rejseplanen.parseStopId("""{"StopLocation":{"id":"123"}}"""))
+    fun readsLineAFromMittogBoard() {
+        val text = """
+            {"data":{"StationId":"FVT","Trains":[
+              ${train("A", "07:41:00", "07:45:30", "KJ", listOf("LI", "KN", "KH"))},
+              ${train("B", "07:43:00", destination = "HTÅ", stops = listOf("KN"))},
+              ${train("A", "07:51:00", destination = "KJ", stops = listOf("LI", "KN"), extra = "\"IsCancelled\":true,")},
+              ${train("A", "07:47:00", destination = "HI", stops = emptyList())},
+              ${train("A", "07:20:00", destination = "KJ", stops = listOf("KN"))}
+            ]},"pico":[{"header":"Sporarbejde mellem Holte og Lyngby","station_code":null},
+                       {"header":"Gælder en anden station","station_code":"KH"}]}
+        """.trimIndent()
+        val board = MitTog.parseBoard(text, "FVT", now = LocalDateTime.of(2026, 10, 13, 7, 40))
+
+        // Linje B og toget, der allerede er kørt kl. 7.20, er væk.
+        assertEquals(3, board.departures.size)
+        val first = board.departures[0]
+        assertEquals(LocalDateTime.of(2026, 10, 13, 7, 41), first.planned)
+        assertEquals(4, first.delayMinutes)
+        assertEquals("Køge", first.direction)
+        assertEquals("2", first.track)
+        assertTrue("KN" in first.stops)
+        assertTrue(board.departures.single { it.planned.minute == 51 }.cancelled)
+        assertEquals(listOf("Sporarbejde mellem Holte og Lyngby"), board.notices)
+        // Toget mod Hillerød regnes ikke med mod byen.
+        assertEquals(listOf(41, 51), board.departures.filter { MitTog.HILLEROD !in it.stops }.map { it.planned.minute })
+    }
+
+    @Test
+    fun skipsTrainsEndingHere() {
+        val text = """{"data":{"Trains":[${train("A", "08:00:00", destination = "HI", stops = emptyList())}]}}"""
+        assertTrue(MitTog.parseBoard(text, "HI", now = LocalDateTime.of(2026, 10, 13, 7, 0)).departures.isEmpty())
     }
 }

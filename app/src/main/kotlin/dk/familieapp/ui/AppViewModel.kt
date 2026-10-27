@@ -17,7 +17,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import dk.familieapp.data.HomeCards
-import dk.familieapp.data.Rejseplanen
+import dk.familieapp.data.MitTog
 import dk.familieapp.data.TrainStatus
 import dk.familieapp.data.Weather
 import dk.familieapp.data.WeatherService
@@ -303,25 +303,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     private var trainAt = 0L
 
-    /** Henter S-togets afgange højst hvert 2. minut (Rejseplanens grænse er 50.000 kald om måneden). */
+    /** Henter S-togets afgange højst hvert minut, så mittog.dk ikke belastes unødigt. */
     fun loadTrain(force: Boolean = false) {
-        val key = settings.value?.rejseplanenKey.orEmpty()
-        if (key.isBlank()) {
-            train = null
-            return
-        }
-        if (!force && now() - trainAt < 2 * 60 * 1000L && train?.isSuccess == true) return
+        if (!force && now() - trainAt < 60 * 1000L && train?.isSuccess == true) return
         trainAt = now()
-        viewModelScope.launch {
-            train = runCatching {
-                // Stationernes id'er ændrer sig ikke, så de huskes på telefonen.
-                suspend fun id(name: String): String =
-                    prefs.getString("stop_$name", null) ?: Rejseplanen.stopId(key, name).also {
-                        prefs.edit().putString("stop_$name", it).apply()
-                    }
-                Rejseplanen.status(key, id(Rejseplanen.FAVRHOLM), id(Rejseplanen.NORREPORT))
-            }
-        }
+        viewModelScope.launch { train = runCatching { MitTog.status() } }
     }
 
     /** Slår en butik til eller fra i tilbudsforslagene (kun forældre). */
@@ -331,11 +317,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val stores = if (included) (current.offerStores + store).distinct() else current.offerStores - store
             current.copy(offerStores = Offers.STORES.filter { it in stores })
         }
-    }
-
-    fun setRejseplanenKey(key: String) {
-        saveSettings { it.copy(rejseplanenKey = key.trim()) }
-        trainAt = 0
     }
 
     /** Flytter et kort op ([step] = -1) eller ned (+1) på forsiden for den valgte profil. */

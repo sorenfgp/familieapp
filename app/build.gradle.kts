@@ -20,8 +20,8 @@ android {
         applicationId = "dk.familieapp"
         minSdk = 26
         targetSdk = 35
-        versionCode = 22
-        versionName = "0.22"
+        versionCode = 23
+        versionName = "0.23"
     }
 
     signingConfigs {
@@ -73,6 +73,7 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore")
 
     implementation("org.jsoup:jsoup:1.17.2")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
 

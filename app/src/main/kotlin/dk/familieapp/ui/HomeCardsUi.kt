@@ -75,10 +75,8 @@ fun WeatherCard(vm: AppViewModel, refresh: Int) {
 
 /** Næste afgange på S-togets linje A mellem Favrholm og Nørreport, med forsinkelser. */
 @Composable
-fun TrainCard(vm: AppViewModel, refresh: Int, onSetup: () -> Unit) {
-    val settings by vm.settings.collectAsStateWithLifecycle()
-    val hasKey = settings?.rejseplanenKey?.isNotBlank() == true
-    LaunchedEffect(refresh, hasKey) { vm.loadTrain() }
+fun TrainCard(vm: AppViewModel, refresh: Int) {
+    LaunchedEffect(refresh) { vm.loadTrain() }
     val result = vm.train
 
     Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), color = Color.White) {
@@ -97,19 +95,12 @@ fun TrainCard(vm: AppViewModel, refresh: Int, onSetup: () -> Unit) {
                 }
             }
             when {
-                !hasKey -> {
-                    Text(
-                        "Kræver en gratis nøgle fra Rejseplanen. En forælder indtaster den under Familien.",
-                        fontSize = 14.sp,
-                        color = Muted,
-                    )
-                    TextButton(onClick = onSetup, contentPadding = PaddingValues(0.dp)) {
-                        Text("Gå til Familien", fontWeight = FontWeight.Bold)
-                    }
-                }
                 status != null -> {
                     DepartureLine("Favrholm → København", status.towardsCity)
                     DepartureLine("Nørreport → Hillerød", status.towardsHillerod)
+                    status.notices.take(2).forEach { notice ->
+                        Text(notice, fontSize = 14.sp, lineHeight = 19.sp, color = Orange)
+                    }
                     TextButton(onClick = { vm.loadTrain(force = true) }, contentPadding = PaddingValues(0.dp)) {
                         Text("Opdatér", fontWeight = FontWeight.Bold)
                     }
@@ -117,7 +108,7 @@ fun TrainCard(vm: AppViewModel, refresh: Int, onSetup: () -> Unit) {
                 result == null -> Text("Henter afgange …", fontSize = 15.sp, color = Muted)
                 else -> {
                     Text(
-                        "Afgangene kunne ikke hentes. Tjek nøglen og internetforbindelsen.",
+                        "Afgangene kunne ikke hentes fra mittog.dk. Tjek internetforbindelsen.",
                         fontSize = 14.sp,
                         color = Muted,
                     )
