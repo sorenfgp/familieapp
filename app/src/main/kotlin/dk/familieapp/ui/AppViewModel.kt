@@ -303,9 +303,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     private var trainAt = 0L
 
-    /** Henter S-togets afgange højst hvert minut, så mittog.dk ikke belastes unødigt. */
+    /** Henter S-togets afgange højst hvert minut, men straks når morgen skifter til eftermiddag. */
     fun loadTrain(force: Boolean = false) {
-        if (!force && now() - trainAt < 60 * 1000L && train?.isSuccess == true) return
+        val cached = train?.getOrNull()
+        val sameHalf = cached?.morning == MitTog.isMorning(java.time.LocalDateTime.now())
+        if (!force && now() - trainAt < 60 * 1000L && cached != null && sameHalf) return
         trainAt = now()
         viewModelScope.launch { train = runCatching { MitTog.status() } }
     }

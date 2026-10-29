@@ -1,6 +1,7 @@
 package dk.familieapp.data
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -34,7 +35,7 @@ object HomeCards {
     /** I den rækkefølge, de vises på forsiden. */
     val all = listOf(
         WEATHER to "Vejret i Hillerød",
-        TRAIN to "S-tog linje A (Favrholm–Nørreport)",
+        TRAIN to "S-tog linje A og metro (Favrholm–Nørreport)",
         DINNER to "Aftensmad i dag",
         CHORES to "Pligter",
         SHOPPING to "Indkøbsliste",
@@ -157,7 +158,7 @@ object WeatherService {
     }
 }
 
-// ---------- S-tog (mittog.dk, kræver ingen nøgle) ----------
+// ---------- S-tog (mittog.dk) og metro (m.dk), kræver ingen nøgle ----------
 
 data class TrainDeparture(
     val planned: LocalDateTime,
@@ -167,16 +168,31 @@ data class TrainDeparture(
     val track: String,
     /** Stationskoder, toget kører til herfra, endestationen medregnet. */
     val stops: List<String> = emptyList(),
+    /** Forventet ankomst til de stationer, tavlen kender tiden for. */
+    val stopTimes: Map<String, LocalDateTime> = emptyMap(),
 ) {
     val delayMinutes: Int
         get() = expected?.let { Duration.between(planned, it).toMinutes().toInt() }?.coerceAtLeast(0) ?: 0
+
+    /** Den tid, toget faktisk forventes at køre. */
+    val departs: LocalDateTime get() = expected ?: planned
 }
 
-/** Næste afgange på linje A: fra Favrholm mod København og fra Nørreport mod Hillerød. */
+/** Et S-tog fra Nørreport og det seneste metrotog fra Christianshavn, der når det. */
+data class MetroLink(val train: TrainDeparture, val latestMetro: LocalDateTime)
+
+/** Metroens driftsbesked for M1/M2, som kører Christianshavn–Nørreport. */
+data class MetroStatus(val message: String, val normal: Boolean)
+
+/** Morgen: Favrholm → Nørreport. Eftermiddag: Christianshavn → Nørreport → Favrholm. */
 data class TrainStatus(
-    val towardsCity: List<TrainDeparture>,
-    val towardsHillerod: List<TrainDeparture>,
-    /** Driftsmeddelelser fra DSB for de to stationer. */
+    val morning: Boolean,
+    val departures: List<TrainDeparture>,
+    /** Kun om eftermiddagen. */
+    val metro: List<MetroLink> = emptyList(),
+    /** Kun om eftermiddagen. Null, hvis m.dk ikke kunne nås. */
+    val metroStatus: MetroStatus? = null,
+    /** Driftsmeddelelser fra DSB for stationen. */
     val notices: List<String> = emptyList(),
 )
 
@@ -194,6 +210,15 @@ object MitTog {
     const val NORREPORT = "KN"
     const val HILLEROD = "HI"
 
+    /** Fra kl. 12 vises hjemturen. */
+    const val AFTERNOON_FROM_HOUR = 12
+
+    /** Metro Christianshavn → Nørreport (to stop). */
+    const val METRO_RIDE_MINUTES = 4L
+
+    /** Fra metroperronen op til S-togsperronen på Nørreport. */
+    const val TRANSFER_MINUTES = 3L
+
     private val names = mapOf(
         "HI" to "Hillerød", "FVT" to "Favrholm", "LI" to "Allerød", "BI" to "Birkerød", "HOT" to "Holte",
         "LY" to "Lyngby", "HL" to "Hellerup", "SAM" to "Svanemøllen", "KK" to "Østerport", "KN" to "Nørreport",
@@ -204,6 +229,7 @@ object MitTog {
 
     fun name(code: String): String = names[code] ?: code
 
+    private val zone = java.time.ZoneId.of("Europe/Copenhagen")
     private val hiddenStopTypes = setOf("TechnicalStop", "CommercielDisembarcationOnly", "FinalDestination", "PassThrough")
     private val timeFormat = java.time.format.DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss")
 
@@ -240,21 +266,48 @@ object MitTog {
         }
     }
 
-    suspend fun status(): TrainStatus = withContext(Dispatchers.IO) {
-        val favrholm = parseBoard(boardText(FAVRHOLM), FAVRHOLM)
-        val norreport = parseBoard(boardText(NORREPORT), NORREPORT)
-        TrainStatus(
-            // Favrholm ligger lige før endestationen, så alt der ikke kører mod Hillerød, kører mod byen.
-            towardsCity = favrholm.departures.filter { HILLEROD !in it.stops }.take(4),
-            towardsHillerod = norreport.departures.filter { FAVRHOLM in it.stops || HILLEROD in it.stops }.take(4),
-            notices = (favrholm.notices + norreport.notices).distinct(),
-        )
+    fun isMorning(now: LocalDateTime): Boolean = now.hour < AFTERNOON_FROM_HOUR
+
+    suspend fun status(now: LocalDateTime = LocalDateTime.now(zone)): TrainStatus = withContext(Dispatchers.IO) {
+        if (isMorning(now)) {
+            val board = parseBoard(boardText(FAVRHOLM), FAVRHOLM, now = now)
+            TrainStatus(morning = true, departures = towardsNorreport(board.departures).take(4), notices = board.notices)
+        } else {
+            val metroStatus = async { runCatching { Metro.status() }.getOrNull() }
+            val board = parseBoard(boardText(NORREPORT), NORREPORT, now = now)
+            val home = towardsFavrholm(board.departures)
+            TrainStatus(
+                morning = false,
+                departures = home.take(4),
+                metro = metroLinks(home, now).take(4),
+                metroStatus = metroStatus.await(),
+                notices = board.notices,
+            )
+        }
     }
+
+    /** Tog fra Favrholm, der kører til Nørreport (alt der ikke kører mod Hillerød). */
+    fun towardsNorreport(departures: List<TrainDeparture>) =
+        departures.filter { NORREPORT in it.stops || HILLEROD !in it.stops }
+
+    /** Tog fra Nørreport, der standser i Favrholm. */
+    fun towardsFavrholm(departures: List<TrainDeparture>) =
+        departures.filter { FAVRHOLM in it.stops || HILLEROD in it.stops }
+
+    /**
+     * For hvert S-tog: seneste metroafgang fra Christianshavn, der når det. Metroen kører uden
+     * fast køreplan (hvert 2.–4. minut), så tiden er regnet baglæns fra togets forventede afgang.
+     * Tog, man ikke længere kan nå, springes over. Aflyste tog tæller ikke med.
+     */
+    fun metroLinks(departures: List<TrainDeparture>, now: LocalDateTime): List<MetroLink> =
+        departures.filterNot { it.cancelled }
+            .map { MetroLink(it, it.departs.minusMinutes(METRO_RIDE_MINUTES + TRANSFER_MINUTES)) }
+            .filterNot { it.latestMetro.isBefore(now.withSecond(0).withNano(0)) }
 
     private fun parseTime(value: String?): LocalDateTime? {
         if (value.isNullOrBlank() || value.startsWith("01-01-0001")) return null
         return runCatching { LocalDateTime.parse(value, timeFormat) }.getOrNull()
-            ?: runCatching { java.time.OffsetDateTime.parse(value).atZoneSameInstant(java.time.ZoneId.of("Europe/Copenhagen")).toLocalDateTime() }.getOrNull()
+            ?: runCatching { java.time.OffsetDateTime.parse(value).atZoneSameInstant(zone).toLocalDateTime() }.getOrNull()
             ?: runCatching { LocalDateTime.parse(value) }.getOrNull()
     }
 
@@ -274,7 +327,7 @@ object MitTog {
         text: String,
         station: String,
         line: String = "A",
-        now: LocalDateTime = LocalDateTime.now(java.time.ZoneId.of("Europe/Copenhagen")),
+        now: LocalDateTime = LocalDateTime.now(zone),
     ): TrainBoard {
         val root = json.parseToJsonElement(text).jsonObject
         val data = root["data"] as? JsonObject
@@ -297,9 +350,16 @@ object MitTog {
                 (train["TargetStation"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content }.orEmpty()
             }.distinct()
             if (destinations.isNotEmpty() && destinations.all { it == station }) return@mapNotNull null
-            val stops = (routes.flatMap { r -> r.objects("Stations").mapNotNull { it.str("StationId") } } + destinations)
+            val routeStops = routes.flatMap { it.objects("Stations") }
+            val stops = (routeStops.mapNotNull { it.str("StationId") } + destinations)
                 .filter { it != station }
                 .distinct()
+            val stopTimes = routeStops.mapNotNull { stop ->
+                val code = stop.str("StationId") ?: return@mapNotNull null
+                val time = parseTime(stop.str("ExpectedDateTime")) ?: parseTime(stop.str("ScheduledDateTime"))
+                    ?: return@mapNotNull null
+                code to time
+            }.toMap()
 
             TrainDeparture(
                 planned = planned,
@@ -308,13 +368,41 @@ object MitTog {
                 cancelled = train.bool("IsCancelledDeparture") ?: (train.bool("IsCancelled") == true),
                 track = train.str("TrackCurrent").orEmpty(),
                 stops = stops,
+                stopTimes = stopTimes,
             )
-        }.sortedBy { it.expected ?: it.planned }
+        }.sortedBy { it.departs }
 
         val notices = (root["pico"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
             .filter { it.str("station_code").let { code -> code == null || code == station } }
             .mapNotNull { it.str("header") }
         return TrainBoard(departures, notices)
+    }
+}
+
+/**
+ * Metroens driftsbeskeder fra m.dk. Endpointet er det, metroens egen hjemmeside bruger,
+ * og er ikke dokumenteret. Metroen har ingen offentlige afgangstider.
+ */
+object Metro {
+    private const val URL = "https://m.dk/umbraco/api/operationDataApi/GetOperationData"
+
+    suspend fun status(): MetroStatus? = withContext(Dispatchers.IO) { parseStatus(httpGet(URL)) }
+
+    /** Beskeden for linjerne M1/M2. Er der flere, vises forstyrrelser før "kører efter planen". */
+    fun parseStatus(text: String): MetroStatus? {
+        val root = json.parseToJsonElement(text) as? JsonObject ?: return null
+        val messages = (root["activeMessages"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+        fun JsonObject.field(name: String) = entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
+        val relevant = messages.filter { m ->
+            val type = (m.field("Type") as? JsonPrimitive)?.content.orEmpty()
+            val types = (m.field("Types") as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content }.orEmpty()
+            "M1" in type || "M2" in type || "M1" in types || "M2" in types
+        }.mapNotNull { m ->
+            val name = (m.field("name") as? JsonPrimitive)?.content?.trim()?.takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+            MetroStatus(name, normal = (m.field("isClearMessage") as? JsonPrimitive)?.booleanOrNull == true)
+        }
+        return relevant.firstOrNull { !it.normal } ?: relevant.firstOrNull()
     }
 }
 

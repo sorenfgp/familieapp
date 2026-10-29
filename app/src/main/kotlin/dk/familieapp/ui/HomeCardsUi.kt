@@ -13,6 +13,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dk.familieapp.data.MitTog
 import dk.familieapp.data.TrainDeparture
 import dk.familieapp.data.WeatherService
 import java.time.format.DateTimeFormatter
@@ -73,7 +74,10 @@ fun WeatherCard(vm: AppViewModel, refresh: Int) {
     }
 }
 
-/** Næste afgange på S-togets linje A mellem Favrholm og Nørreport, med forsinkelser. */
+/**
+ * S-togets linje A. Om morgenen afgange fra Favrholm mod Nørreport, om eftermiddagen fra
+ * Nørreport mod Favrholm sammen med metroen fra Christianshavn, der når hvert tog.
+ */
 @Composable
 fun TrainCard(vm: AppViewModel, refresh: Int) {
     LaunchedEffect(refresh) { vm.loadTrain() }
@@ -85,10 +89,9 @@ fun TrainCard(vm: AppViewModel, refresh: Int) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("S-tog linje A", Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 if (status != null) {
-                    val all = status.towardsCity + status.towardsHillerod
-                    val worst = all.maxOfOrNull { it.delayMinutes } ?: 0
+                    val worst = status.departures.maxOfOrNull { it.delayMinutes } ?: 0
                     when {
-                        all.any { it.cancelled } -> Pill("Aflysninger", Color(0xFFF6D3C0))
+                        status.departures.any { it.cancelled } -> Pill("Aflysninger", Color(0xFFF6D3C0))
                         worst >= 3 -> Pill("Op til $worst min forsinket", Color(0xFFF6D3C0))
                         else -> Pill("Kører til tiden")
                     }
@@ -96,8 +99,12 @@ fun TrainCard(vm: AppViewModel, refresh: Int) {
             }
             when {
                 status != null -> {
-                    DepartureLine("Favrholm → København", status.towardsCity)
-                    DepartureLine("Nørreport → Hillerød", status.towardsHillerod)
+                    if (status.morning) {
+                        DepartureLine("Favrholm → Nørreport", status.departures, arrivalAt = MitTog.NORREPORT)
+                    } else {
+                        DepartureLine("Nørreport → Favrholm", status.departures, arrivalAt = MitTog.FAVRHOLM)
+                        MetroSection(status)
+                    }
                     status.notices.take(2).forEach { notice ->
                         Text(notice, fontSize = 14.sp, lineHeight = 19.sp, color = Orange)
                     }
@@ -122,11 +129,11 @@ fun TrainCard(vm: AppViewModel, refresh: Int) {
 }
 
 @Composable
-private fun DepartureLine(label: String, departures: List<TrainDeparture>) {
+private fun DepartureLine(label: String, departures: List<TrainDeparture>, arrivalAt: String) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(label, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Muted)
         if (departures.isEmpty()) {
-            Text("Ingen afgange de næste to timer", fontSize = 15.sp)
+            Text("Ingen afgange lige nu", fontSize = 15.sp)
         }
         departures.forEach { d ->
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -149,7 +156,41 @@ private fun DepartureLine(label: String, departures: List<TrainDeparture>) {
                 if (d.track.isNotBlank()) {
                     Text("spor ${d.track}", fontSize = 13.sp, color = Muted)
                 }
+                val arrival = d.stopTimes[arrivalAt]
+                if (arrival != null && !d.cancelled) {
+                    Text("→ ${clock.format(arrival)}", fontSize = 13.sp, color = Muted)
+                }
             }
+        }
+    }
+}
+
+/** Seneste metro fra Christianshavn til hvert S-tog, og metroens driftsbesked. */
+@Composable
+private fun MetroSection(status: dk.familieapp.data.TrainStatus) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text("Metro Christianshavn → Nørreport", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Muted)
+        if (status.metro.isEmpty()) {
+            Text("Ingen S-tog at nå lige nu", fontSize = 15.sp)
+        }
+        status.metro.forEach { link ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Senest ${clock.format(link.latestMetro)}", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text("til S-tog ${clock.format(link.train.departs)}", fontSize = 14.sp, color = Muted)
+            }
+        }
+        Text(
+            "Metroen kører hvert 2.–4. minut uden fast køreplan. Tiden giver ${MitTog.METRO_RIDE_MINUTES} min " +
+                "i metroen og ${MitTog.TRANSFER_MINUTES} min til at skifte på Nørreport.",
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            color = Muted,
+        )
+        val metro = status.metroStatus
+        when {
+            metro == null -> Text("Metroens driftsstatus kunne ikke hentes.", fontSize = 14.sp, color = Muted)
+            metro.normal -> Text("Metro M1/M2: ${metro.message}", fontSize = 14.sp, color = Green)
+            else -> Text("Metro M1/M2: ${metro.message}", fontSize = 14.sp, lineHeight = 19.sp, fontWeight = FontWeight.SemiBold, color = Orange)
         }
     }
 }

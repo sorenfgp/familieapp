@@ -1,5 +1,6 @@
 package dk.familieapp
 
+import dk.familieapp.data.Metro
 import dk.familieapp.data.MitTog
 import dk.familieapp.data.WeatherService
 import org.junit.Assert.assertEquals
@@ -38,7 +39,7 @@ class HomeInfoTest {
         stops: List<String>,
         extra: String = "",
     ): String {
-        val stations = stops.joinToString(",") { "{\"StationId\":\"$it\"}" }
+        val stations = stops.joinToString(",") { "{\"StationId\":\"$it\",\"ExpectedDateTime\":\"13-10-2026 08:18:00\"}" }
         return """
         {"TrainId":"1","Product":"STRAIN","LineName":"$line",
          "ScheduleTimeDeparture":"13-10-2026 $planned","EstimatedTimeDeparture":"13-10-2026 $expected",
@@ -80,5 +81,55 @@ class HomeInfoTest {
     fun skipsTrainsEndingHere() {
         val text = """{"data":{"Trains":[${train("A", "08:00:00", destination = "HI", stops = emptyList())}]}}"""
         assertTrue(MitTog.parseBoard(text, "HI", now = LocalDateTime.of(2026, 10, 13, 7, 0)).departures.isEmpty())
+    }
+
+    @Test
+    fun readsArrivalTimesAtLaterStations() {
+        val text = """{"data":{"Trains":[${train("A", "07:41:00", destination = "KJ", stops = listOf("KN"))}]}}"""
+        val d = MitTog.parseBoard(text, "FVT", now = LocalDateTime.of(2026, 10, 13, 7, 0)).departures.single()
+        assertEquals(LocalDateTime.of(2026, 10, 13, 8, 18), d.stopTimes["KN"])
+    }
+
+    @Test
+    fun picksHomeTrainsAndTheMetroThatReachesThem() {
+        val text = """
+            {"data":{"Trains":[
+              ${train("A", "16:05:00", destination = "KJ", stops = listOf("KH"))},
+              ${train("A", "16:10:00", "16:12:00", "HI", listOf("HL", "FVT"))},
+              ${train("A", "16:20:00", destination = "HI", stops = listOf("FVT"), extra = "\"IsCancelled\":true,")},
+              ${train("A", "16:30:00", destination = "HI", stops = listOf("FVT"))}
+            ]}}
+        """.trimIndent()
+        val now = LocalDateTime.of(2026, 10, 13, 16, 4)
+        val home = MitTog.towardsFavrholm(MitTog.parseBoard(text, "KN", now = now).departures)
+        assertEquals(listOf(10, 20, 30), home.map { it.planned.minute })
+
+        // 4 min i metroen og 3 min til at skifte, regnet fra den forventede afgang. Aflyste tog tæller ikke.
+        val links = MitTog.metroLinks(home, now)
+        assertEquals(listOf(LocalDateTime.of(2026, 10, 13, 16, 5), LocalDateTime.of(2026, 10, 13, 16, 23)), links.map { it.latestMetro })
+        // Klokken 16.06 kan toget 16.12 ikke længere nås.
+        assertEquals(1, MitTog.metroLinks(home, now.plusMinutes(2)).size)
+    }
+
+    @Test
+    fun switchesToAfternoonAtNoon() {
+        assertTrue(MitTog.isMorning(LocalDateTime.of(2026, 10, 13, 11, 59)))
+        assertTrue(!MitTog.isMorning(LocalDateTime.of(2026, 10, 13, 12, 0)))
+    }
+
+    @Test
+    fun readsMetroStatusForM1M2() {
+        val text = """
+            {"installations":[],"activeWarning":true,"activeMessages":[
+              {"name":"Vi kører efter planen","Type":"M3-M4","Types":["M3","M4"],"isClearMessage":true},
+              {"name":"Vi kører efter planen","Type":"M1-M2","Types":["M1","M2"],"isClearMessage":true},
+              {"name":"Ingen metro mellem Vanløse og Frederiksberg kl. 20.30-23","Type":"M1-M2","Types":["M1","M2"],"isClearMessage":false}
+            ]}
+        """.trimIndent()
+        val status = Metro.parseStatus(text)!!
+        assertEquals("Ingen metro mellem Vanløse og Frederiksberg kl. 20.30-23", status.message)
+        assertTrue(!status.normal)
+        val calm = Metro.parseStatus("""{"activeMessages":[{"name":"Vi kører efter planen","Type":"M1-M2","isClearMessage":true}]}""")!!
+        assertTrue(calm.normal)
     }
 }
