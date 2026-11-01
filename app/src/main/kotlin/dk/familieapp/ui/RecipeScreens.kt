@@ -260,12 +260,14 @@ fun RecipeEditScreen(vm: AppViewModel, id: String, nav: NavController) {
         isNew = isNew,
         onCancel = {
             vm.draft = null
+            vm.linkMeal = null
             nav.popBackStack()
         },
         onSave = { recipe, image, imageChanged ->
             val savedId = vm.saveRecipe(recipe)
             if (imageChanged) vm.saveRecipeImage(savedId, image)
             vm.draft = null
+            if (isNew) vm.linkPendingMeal(savedId)
             vm.mealTab = 1
             if (isNew) {
                 nav.navigate("recipe/$savedId") {
@@ -558,7 +560,10 @@ fun ImportScreen(vm: AppViewModel, initialUrl: String, nav: NavController) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        BackBar("Annullér", onBack = { nav.popBackStack() })
+        BackBar("Annullér", onBack = {
+            vm.linkMeal = null
+            nav.popBackStack()
+        })
         Column(
             Modifier
                 .weight(1f)
@@ -566,11 +571,14 @@ fun ImportScreen(vm: AppViewModel, initialUrl: String, nav: NavController) {
                 .padding(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            vm.linkMeal?.let { meal ->
+                Text("Opskrift til ${meal.title} på madplanen", fontSize = 14.sp, color = Muted)
+            }
             Text("Ny opskrift", fontSize = 30.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold)
             Segmented(
                 options = listOf("Importér fra link", "Skriv selv"),
                 selected = 0,
-                onSelect = { if (it == 1) openForm(Recipe()) },
+                onSelect = { if (it == 1) openForm(Recipe(name = vm.linkMeal?.title.orEmpty())) },
             )
             OutlinedTextField(
                 value = url,
@@ -598,7 +606,7 @@ fun ImportScreen(vm: AppViewModel, initialUrl: String, nav: NavController) {
                 Surface(shape = RoundedCornerShape(18.dp), color = Color.White) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(message, fontSize = 15.sp)
-                        TextButton(onClick = { openForm(Recipe(sourceUrl = RecipeImporter.normalizeUrl(url))) }) {
+                        TextButton(onClick = { openForm(Recipe(name = vm.linkMeal?.title.orEmpty(), sourceUrl = RecipeImporter.normalizeUrl(url))) }) {
                             Text("Skriv selv", fontWeight = FontWeight.Bold)
                         }
                     }

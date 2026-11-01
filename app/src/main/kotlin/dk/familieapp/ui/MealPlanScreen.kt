@@ -102,6 +102,10 @@ private fun WeekPlan(
     val editable = me?.role == ROLE_PARENT
     // Retten, der rettes, eller en ny ret (uden id) på en dag.
     var editing by remember { mutableStateOf<PlannedMeal?>(null) }
+    // Retten uden opskrift, som forælderen har trykket på.
+    var missingRecipe by remember { mutableStateOf<PlannedMeal?>(null) }
+    // Kommer man tilbage til madplanen uden at gemme, skal en ny opskrift ikke kobles til retten.
+    LaunchedEffect(Unit) { vm.linkMeal = null }
 
     LazyColumn(
         modifier,
@@ -118,6 +122,7 @@ private fun WeekPlan(
                 onEdit = { editing = it },
                 onAdd = { editing = PlannedMeal(date = date.toString()) },
                 onOpenRecipe = { nav.navigate("recipe/$it") },
+                onMissingRecipe = { missingRecipe = it },
             )
         }
         if (editable) item {
@@ -133,6 +138,44 @@ private fun WeekPlan(
                 modifier = Modifier.padding(top = 8.dp),
             )
         }
+    }
+
+    missingRecipe?.let { meal ->
+        AlertDialog(
+            onDismissRequest = { missingRecipe = null },
+            title = { Text(meal.title) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Retten har ingen opskrift endnu. Den nye opskrift kobles til retten på madplanen.", fontSize = 15.sp)
+                    Button(
+                        onClick = {
+                            missingRecipe = null
+                            vm.linkMeal = meal
+                            nav.navigate("import")
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Importér fra link", fontWeight = FontWeight.Bold) }
+                    OutlinedButton(
+                        onClick = {
+                            missingRecipe = null
+                            vm.linkMeal = meal
+                            vm.draft = Recipe(name = meal.title)
+                            nav.navigate("edit")
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Skriv opskrift", fontWeight = FontWeight.Bold) }
+                    OutlinedButton(
+                        onClick = {
+                            missingRecipe = null
+                            editing = meal
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Vælg fra opskrifterne") }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { missingRecipe = null }) { Text("Luk") } },
+        )
     }
 
     editing?.let { meal ->
@@ -163,6 +206,7 @@ private fun DayCard(
     onEdit: (PlannedMeal) -> Unit,
     onAdd: () -> Unit,
     onOpenRecipe: (String) -> Unit,
+    onMissingRecipe: (PlannedMeal) -> Unit,
 ) {
     val background = if (isToday) Green else Color.White
     val textColor = if (isToday) Color.White else Ink
@@ -190,13 +234,13 @@ private fun DayCard(
                 meals.forEach { meal ->
                     val hasRecipe = meal.recipeId.isNotBlank()
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Tryk på en ret med opskrift åbner opskriften. Uden opskrift kan forældre rette retten.
+                        // Tryk på en ret med opskrift åbner opskriften. Uden opskrift kan forældre skrive eller importere en.
                         Column(
                             Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(10.dp))
                                 .clickable(enabled = hasRecipe || editable) {
-                                    if (hasRecipe) onOpenRecipe(meal.recipeId) else onEdit(meal)
+                                    if (hasRecipe) onOpenRecipe(meal.recipeId) else onMissingRecipe(meal)
                                 }
                                 .padding(vertical = 6.dp),
                         ) {

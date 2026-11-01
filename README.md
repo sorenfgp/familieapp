@@ -2,10 +2,10 @@
 
 Android-app til familiens madplan, opskrifter og indkøb. Skrevet i Kotlin med Jetpack Compose.
 
-## Hvad appen kan (version 0.25)
+## Hvad appen kan (version 0.26)
 
 - **Profiler:** hver telefon eller tablet vælger en profil. Forældreprofiler kræver forælder-PIN. Avataren øverst fører til familie og indstillinger.
-- **Madplan:** en eller flere retter pr. dag (fx små retter eller en dessert), uge for uge fra søndag til lørdag. Vælg fra opskrifterne eller skriv en ret selv.
+- **Madplan:** en eller flere retter pr. dag (fx små retter eller en dessert), uge for uge fra søndag til lørdag. Vælg fra opskrifterne eller skriv en ret selv. Tryk på en ret uden opskrift for at importere eller skrive en, som så kobles til retten.
 - **Forslag ud fra tilbud:** under Madplan foreslås aftensretter fra kartoteket med flest ingredienser på tilbud i de butikker, familien har valgt blandt Bilka, Rema 1000, Netto og Meny (via Tjek/eTilbudsavis, uofficielt API).
 - **Opskrifter:** kartotek med ingredienser, fremgangsmåde og billede af retten, delt i aftensmad og desserter. Importér fra et link, del en side fra browseren til appen, eller skriv selv.
 - **Indkøbsliste:** grupperet efter butiksafdeling. En vare kan flyttes til en anden afdeling, og valget huskes. Ens varer lægges sammen til én linje med summeret mængde og forkortede opskriftsnavne. Kun forældre kan rette listen.

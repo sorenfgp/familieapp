@@ -129,6 +129,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Opskrift på vej ind i redigeringsskærmen (ny eller importeret). */
     var draft by mutableStateOf<Recipe?>(null)
 
+    /** Retten på madplanen, som en ny opskrift skal kobles til, når den gemmes. */
+    var linkMeal: PlannedMeal? = null
+
+    /** Kobler [linkMeal] til den gemte opskrift. Rettens navn på madplanen bevares. */
+    fun linkPendingMeal(recipeId: String) {
+        val pending = linkMeal ?: return
+        linkMeal = null
+        val current = meals.value.firstOrNull { it.id == pending.id } ?: pending
+        saveMeal(current.copy(recipeId = recipeId))
+    }
+
     // ---- Familie ----
 
     private fun refreshHousehold() {
