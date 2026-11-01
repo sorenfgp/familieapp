@@ -30,9 +30,26 @@ object RecipeImporter {
 
     suspend fun fetch(inputUrl: String): Recipe = withContext(Dispatchers.IO) {
         val url = normalizeUrl(inputUrl)
-        val page = Jsoup.connect(url).userAgent(USER_AGENT).timeout(15_000).get()
-        val blocks = page.select("script[type=application/ld+json]").map { it.data() }
-        parseJsonLd(blocks, url) ?: throw NoRecipeFoundException()
+        val page = Jsoup.connect(url)
+            .userAgent(USER_AGENT)
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header("Accept-Language", "da-DK,da;q=0.9,en;q=0.8")
+            .followRedirects(true)
+            .timeout(20_000)
+            .get()
+        parseHtml(page.outerHtml(), url) ?: throw NoRecipeFoundException()
+    }
+
+    /**
+     * Læser opskriften fra en hel side. Først schema.org/Recipe som JSON-LD, så microdata,
+     * så kendte opskrifts-plugins og til sidst sidens tekst ud fra overskrifter som
+     * "Ingredienser" og "Sådan gør du".
+     */
+    fun parseHtml(html: String, url: String): Recipe? {
+        val doc = Jsoup.parse(html, url)
+        val blocks = doc.select("script[type=application/ld+json]").map { it.data() }
+        parseJsonLd(blocks, url)?.takeIf { it.ingredients.isNotEmpty() || it.steps.isNotEmpty() }?.let { return it }
+        return HtmlRecipe.parse(doc, url)
     }
 
     fun parseJsonLd(blocks: List<String>, url: String): Recipe? {
@@ -44,9 +61,11 @@ object RecipeImporter {
         return null
     }
 
-    private fun findRecipe(element: JsonElement): JsonObject? = when (element) {
-        is JsonArray -> element.firstNotNullOfOrNull { findRecipe(it) }
-        is JsonObject -> if (isRecipe(element)) element else element["@graph"]?.let { findRecipe(it) }
+    /** Leder i hele strukturen, også i "@graph", "mainEntity" og lignende. */
+    private fun findRecipe(element: JsonElement, depth: Int = 0): JsonObject? = when {
+        depth > 8 -> null
+        element is JsonArray -> element.firstNotNullOfOrNull { findRecipe(it, depth + 1) }
+        element is JsonObject -> if (isRecipe(element)) element else element.values.firstNotNullOfOrNull { findRecipe(it, depth + 1) }
         else -> null
     }
 
@@ -114,9 +133,11 @@ object RecipeImporter {
     )
 
     /** Dessert, hvis sidens kategori, nøgleord eller navn tyder på det. Ellers aftensmad. */
-    private fun guessKind(node: JsonObject): String {
-        val text = (texts(node["recipeCategory"]) + texts(node["keywords"]) + texts(node["name"]))
-            .joinToString(" ").lowercase()
+    private fun guessKind(node: JsonObject): String =
+        guessKindFromText((texts(node["recipeCategory"]) + texts(node["keywords"]) + texts(node["name"])).joinToString(" "))
+
+    internal fun guessKindFromText(raw: String): String {
+        val text = raw.lowercase()
         val words = text.split(Regex("[^\\p{L}]+")).filter { it.isNotEmpty() }
         val isDessert = dessertWords.any { key ->
             if (key.length <= 2) words.any { it == key } else words.any { it.contains(key) }
@@ -125,7 +146,7 @@ object RecipeImporter {
     }
 
     /** Fjerner HTML-tags og -entiteter. */
-    private fun clean(text: String): String = Jsoup.parse(text).text().trim()
+    internal fun clean(text: String): String = Jsoup.parse(text).text().trim()
 
     private val units = setOf(
         "g", "gram", "kg", "ml", "cl", "dl", "l", "liter", "tsk", "spsk", "stk", "dåse", "dåser",

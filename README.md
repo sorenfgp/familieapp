@@ -2,7 +2,7 @@
 
 Android-app til familiens madplan, opskrifter og indkøb. Skrevet i Kotlin med Jetpack Compose.
 
-## Hvad appen kan (version 0.24)
+## Hvad appen kan (version 0.25)
 
 - **Profiler:** hver telefon eller tablet vælger en profil. Forældreprofiler kræver forælder-PIN. Avataren øverst fører til familie og indstillinger.
 - **Madplan:** en eller flere retter pr. dag (fx små retter eller en dessert), uge for uge fra søndag til lørdag. Vælg fra opskrifterne eller skriv en ret selv.
@@ -64,6 +64,6 @@ Et nyt modul tilføjes ved at lægge sine modeller i `Models.kt`, registrere en 
 
 ## Kendte begrænsninger
 
-- Import virker kun på sider, der har opskriften som schema.org/Recipe (JSON-LD).
+- Import læser schema.org/Recipe (JSON-LD eller microdata), WP Recipe Maker og Tasty Recipes. Ellers gætter appen ud fra sidens tekst: ingredienslister før en overskrift som "Sådan gør du" eller "Fremgangsmåde" og trinene efter den. Gættet kan kræve lidt oprydning.
 - Butiksafdelingen gættes ud fra varens navn og kan ikke rettes i appen endnu.
 - Login er anonymt pr. telefon. Afinstalleres appen, deltager man igen med familiekoden.

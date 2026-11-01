@@ -543,6 +543,8 @@ fun ImportScreen(vm: AppViewModel, initialUrl: String, nav: NavController) {
                 found = RecipeImporter.fetch(url)
             } catch (e: NoRecipeFoundException) {
                 error = "Siden har ikke opskriften i et format, appen kan læse. Du kan skrive den selv."
+            } catch (e: org.jsoup.HttpStatusException) {
+                error = "Siden afviste at sende opskriften (fejl ${e.statusCode}). Du kan skrive den selv."
             } catch (e: Exception) {
                 error = "Siden kunne ikke hentes. Tjek linket og internetforbindelsen."
             } finally {
