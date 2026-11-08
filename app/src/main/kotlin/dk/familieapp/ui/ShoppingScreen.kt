@@ -58,6 +58,25 @@ fun ShoppingScreen(vm: AppViewModel) {
             onSelect = { vm.shoppingTab = it },
             modifier = Modifier.padding(horizontal = 20.dp),
         )
+        if (vm.shoppingTab == 0) {
+            // Hvor længe varerne skal kunne holde sig: til næste fredag.
+            val today = java.time.LocalDate.now()
+            val friday = dk.familieapp.data.Dates.nextFriday(today)
+            val days = java.time.temporal.ChronoUnit.DAYS.between(today, friday)
+            Surface(
+                Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = Mint,
+            ) {
+                Text(
+                    "Skal holde til ${dk.familieapp.data.Dates.long(friday)} · om $days ${if (days == 1L) "dag" else "dage"}",
+                    Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Green,
+                )
+            }
+        }
         if (!canEdit) {
             Text(
                 "Kun forældre kan rette indkøbslisten.",

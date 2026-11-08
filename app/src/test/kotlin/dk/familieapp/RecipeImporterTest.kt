@@ -109,5 +109,9 @@ class RecipeImporterTest {
         assertEquals(41, Dates.weekNumber(saturday))
         assertEquals("lørdag 10. oktober", Dates.long(saturday))
         assertEquals("5.–11. oktober", Dates.weekRange(Dates.weekStart(saturday)))
+        // Lørdag 10. → fredag 16. oktober. En fredag giver fredagen ugen efter.
+        assertEquals(LocalDate.of(2026, 10, 16), Dates.nextFriday(saturday))
+        assertEquals(LocalDate.of(2026, 10, 23), Dates.nextFriday(LocalDate.of(2026, 10, 16)))
+        assertEquals(LocalDate.of(2026, 10, 16), Dates.nextFriday(LocalDate.of(2026, 10, 15)))
     }
 }

@@ -70,6 +70,10 @@ object Dates {
     fun planWeekStart(date: LocalDate): LocalDate =
         date.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY))
 
+    /** Første fredag efter [date]. Er det fredag i dag, er det fredag i næste uge. */
+    fun nextFriday(date: LocalDate): LocalDate =
+        date.with(java.time.temporal.TemporalAdjusters.next(java.time.DayOfWeek.FRIDAY))
+
     fun weekNumber(date: LocalDate): Int = date.get(WeekFields.ISO.weekOfWeekBasedYear())
 
     fun dayName(date: LocalDate): String = dayLong[date.dayOfWeek.value - 1]
